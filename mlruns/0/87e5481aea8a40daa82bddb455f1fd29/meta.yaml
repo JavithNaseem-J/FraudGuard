@@ -1,0 +1,15 @@
+artifact_uri: file:///F:/FraudGuard-End-to-End-Bank-Transaction-Fraud-Detection/mlruns/0/87e5481aea8a40daa82bddb455f1fd29/artifacts
+end_time: 1747047240643
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: 87e5481aea8a40daa82bddb455f1fd29
+run_name: Model Evaluation
+run_uuid: 87e5481aea8a40daa82bddb455f1fd29
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1747047236166
+status: 3
+tags: []
+user_id: Javith Naseem

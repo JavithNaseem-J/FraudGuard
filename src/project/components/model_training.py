@@ -21,9 +21,10 @@ from project.entity.config_entity import ModelTrainerConfig
 class ModelTrainer:
     def __init__(self, config: ModelTrainerConfig):
         self.config = config
+
         dagshub.init(repo_owner="JavithNaseem-J", repo_name="FraudGuard-End-to-End-Bank-Transaction-Fraud-Detection")
         mlflow.set_tracking_uri("https://dagshub.com/JavithNaseem-J/FraudGuard-End-to-End-Bank-Transaction-Fraud-Detection.mlflow")
-        mlflow.set_experiment("Fraud-Detection")
+        mlflow.set_experiment("Bank-Fraud-Detection")
 
         self.models = {
             "XGBoost": {
@@ -79,11 +80,15 @@ class ModelTrainer:
                     mean_score = scores.mean()
                     std_score = scores.std()
 
-                    with mlflow.start_run(run_name=f"{model_name}_trial_{trial.number}", nested=True):
+                    with mlflow.start_run(run_name="Trial", nested=True):
                         mlflow.log_params(params)
                         mlflow.log_metric("cv_score", mean_score)
                         mlflow.log_metric("cv_std", std_score)
-                        mlflow.set_tags({"model_name": model_name, "stage": "trial"})
+                        mlflow.set_tags({
+                            "model_name": model_name,
+                            "trial_number": trial.number,
+                            "stage": "HPO"
+                        })
                     return mean_score
 
                 study = optuna.create_study(direction="maximize")
@@ -130,7 +135,7 @@ class ModelTrainer:
             save_bin(data=best_model, path=Path(model_path))
 
             best_model_info_path = os.path.join(self.config.root_dir, "best_model_info.json")
-            save_json(data=best_overall, path=Path(best_model_info_path))
+            save_json(path=Path(best_model_info_path), data=best_overall)
             mlflow.log_artifact(best_model_info_path)
 
         logger.info(f"Best model overall: {best_overall}")
