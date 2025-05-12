@@ -1,13 +1,13 @@
-# End-to-End Credit Fraud Detection
+# FraudGuard
 
 ![image](https://github.com/user-attachments/assets/8d0ebeac-1e3c-4d77-9c31-18b75fdd9783)
 
-**End-to-End Credit Fraud Detection**
+**End-to-End-Bank-Transaction-Fraud-Detection**
 This is a comprehensive machine learning project designed to detect fraudulent credit transactions using a modular pipeline, modern MLOps practices, and a user-friendly web application.it showcases advanced skills in data science, machine learning, MLOps, and deployment, making it an ideal portfolio piece for roles in data science, ML engineering, and fintech.
 
 
 ## Project Overview
-Credit fraud is a critical issue in the financial industry, leading to billions in losses annually. This project builds an end-to-end machine learning pipeline to detect fraudulent transactions using a dataset with features like `Transaction_Amount` and `Previous_Fraudulent_Transactions`. The pipeline includes data ingestion, validation, transformation, model training with hyperparameter optimization, evaluation, and deployment via a FastAPI web app. The project emphasizes production readiness with Docker containerization, CI/CD via GitHub Actions, and experiment tracking using MLflow and Dagshub.
+Bank-Transaction-Fraud  is a critical issue in the financial industry, leading to billions in losses annually. This project builds an end-to-end machine learning pipeline to detect fraudulent transactions using a dataset with features like `Transaction_Amount` and `Previous_Fraudulent_Transactions`. The pipeline includes data ingestion, validation, transformation, model training with hyperparameter optimization, evaluation, and deployment via a FastAPI web app. The project emphasizes production readiness with Docker containerization, CI/CD via GitHub Actions, and experiment tracking using MLflow and Dagshub.
 
 **Key Objectives**:
 - Develop a scalable and modular ML pipeline for fraud detection.
@@ -47,7 +47,8 @@ Credit fraud is a critical issue in the financial industry, leading to billions 
 
 ## Project Structure
 ```
-📦 E2E-Credit-Fraud-Detection
+📦 FraudGuard-End-to-End-Bank-Transaction-Fraud-Detection
+
 ├─ .dvc/                  # DVC configuration
 ├─ artifacts/             # Pipeline outputs (data, models, metrics)
 ├─ config/                # Configuration files
@@ -82,7 +83,7 @@ Credit fraud is a critical issue in the financial industry, leading to billions 
 ### Installation
 1. **Clone the Repository**:
    ```bash
-   git clone https://github.com/JavithNaseem-J/E2E-Credit-Fraud-Detection.git
+   git clone https://github.com/JavithNaseem-J/FraudGuard-End-to-End-Bank-Transaction-Fraud-Detection.git
    cd E2E-Credit-Fraud-Detection
    ```
 
@@ -171,7 +172,7 @@ The project uses GitHub Actions for continuous integration and deployment to AWS
 
 2. **Deploy Locally with Docker**:
    ```bash
-   docker build -t credit-fraud-detection .
+   docker build -t bank-fraud-detection .
    docker run -d -p 8080:8080 \
      -e AWS_ACCESS_KEY_ID=your_access_key \
      -e AWS_SECRET_ACCESS_KEY=your_secret_key \
@@ -183,7 +184,7 @@ The project uses GitHub Actions for continuous integration and deployment to AWS
 Experiments are tracked using MLflow and hosted on Dagshub.
 
 - **View Experiments**:
-  - URL: [Dagshub MLflow Dashboard](https://dagshub.com/JavithNaseem-J/E2E-Credit-Fraud-Detection.mlflow)
+  - URL: [Dagshub MLflow Dashboard](https://dagshub.com/JavithNaseem-J/FraudGuard-End-to-End-Bank-Transaction-Fraud-Detection.mlflow)
   - Metrics: Best cross-validation scores for each model.
   - Models: XGBoost, Random Forest, Logistic Regression.
 
