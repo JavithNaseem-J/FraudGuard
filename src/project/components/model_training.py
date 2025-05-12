@@ -22,8 +22,8 @@ class ModelTrainer:
     def __init__(self, config: ModelTrainerConfig):
         self.config = config
 
-        dagshub.init(repo_owner="JavithNaseem-J", repo_name="FraudGuard-End-to-End-Bank-Transaction-Fraud-Detection")
-        mlflow.set_tracking_uri("https://dagshub.com/JavithNaseem-J/FraudGuard-End-to-End-Bank-Transaction-Fraud-Detection.mlflow")
+        dagshub.init(repo_owner="JavithNaseem-J", repo_name="FraudGuard")
+        mlflow.set_tracking_uri("https://dagshub.com/JavithNaseem-J/FraudGuard.mlflow")
         mlflow.set_experiment("Bank-Fraud-Detection")
 
         self.models = {
