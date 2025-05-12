@@ -47,7 +47,7 @@ Bank-Transaction-Fraud  is a critical issue in the financial industry, leading t
 
 ## Project Structure
 ```
-📦 FraudGuard-End-to-End-Bank-Transaction-Fraud-Detection
+📦 FraudGuard
 
 ├─ .dvc/                  # DVC configuration
 ├─ artifacts/             # Pipeline outputs (data, models, metrics)
@@ -83,14 +83,14 @@ Bank-Transaction-Fraud  is a critical issue in the financial industry, leading t
 ### Installation
 1. **Clone the Repository**:
    ```bash
-   git clone https://github.com/JavithNaseem-J/FraudGuard-End-to-End-Bank-Transaction-Fraud-Detection.git
-   cd E2E-Credit-Fraud-Detection
+   git clone https://github.com/JavithNaseem-J/FraudGuard.git
+   cd FraudGuard
    ```
 
 2. **Create a Virtual Environment**:
    ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   conda create -n <name> -y
+   conda activate <name>
    ```
 
 3. **Install Dependencies**:
@@ -184,7 +184,7 @@ The project uses GitHub Actions for continuous integration and deployment to AWS
 Experiments are tracked using MLflow and hosted on Dagshub.
 
 - **View Experiments**:
-  - URL: [Dagshub MLflow Dashboard](https://dagshub.com/JavithNaseem-J/FraudGuard-End-to-End-Bank-Transaction-Fraud-Detection.mlflow)
+  - URL: [Dagshub MLflow Dashboard](https://dagshub.com/JavithNaseem-J/FraudGuard.mlflow)
   - Metrics: Best cross-validation scores for each model.
   - Models: XGBoost, Random Forest, Logistic Regression.
 
