@@ -1,0 +1,131 @@
+schema: '2.0'
+stages:
+  data_ingestion:
+    cmd: python main.py --stage data_ingestion
+    deps:
+    - path: config_file/config.yaml
+      hash: md5
+      md5: 50b9b2781597f603b0195f3bfdcf47e2
+      size: 1482
+    - path: main.py
+      hash: md5
+      md5: de00327a0b07504d681df6eb581b41fc
+      size: 2148
+    - path: src/project/config/config.py
+      hash: md5
+      md5: 69ea8e5b2ca2f599d5e6443c7f4ab52c
+      size: 3920
+    - path: src/project/entity/config_entity.py
+      hash: md5
+      md5: 94bee27d8409548998f93d8236b3832c
+      size: 1142
+    - path: src/project/utils/common.py
+      hash: md5
+      md5: 79810f2bf9b7803bdd9bf0ddff848517
+      size: 2951
+    outs:
+    - path: artifacts/data_ingestion
+      hash: md5
+      md5: f3f0c63e93241a1f7c457a37e2750321.dir
+      size: 4485446
+      nfiles: 2
+  data_validation:
+    cmd: python main.py --stage data_validation
+    deps:
+    - path: artifacts/data_ingestion/Fraud-data.csv
+      hash: md5
+      md5: 6684ff6a45d05b191e074b8bcf84d9f5
+      size: 3692523
+    - path: config_file/config.yaml
+      hash: md5
+      md5: 50b9b2781597f603b0195f3bfdcf47e2
+      size: 1482
+    - path: config_file/schema.yaml
+      hash: md5
+      md5: bcd084ee0e29c78405ee43bcc1682469
+      size: 715
+    - path: main.py
+      hash: md5
+      md5: de00327a0b07504d681df6eb581b41fc
+      size: 2148
+    - path: src/project/components/data_validation.py
+      hash: md5
+      md5: 357ab3b205ea1a801b5189cc80d9d503
+      size: 701
+    - path: src/project/config/config.py
+      hash: md5
+      md5: 69ea8e5b2ca2f599d5e6443c7f4ab52c
+      size: 3920
+    - path: src/project/entity/config_entity.py
+      hash: md5
+      md5: 94bee27d8409548998f93d8236b3832c
+      size: 1142
+    outs:
+    - path: artifacts/data_validation/status.json
+      hash: md5
+      md5: 21c477e3fbec21ba40f45b08ba60b7d8
+      size: 23
+  data_transformation:
+    cmd: python main.py --stage data_transformation
+    deps:
+    - path: artifacts/data_ingestion/Fraud-data.csv
+      hash: md5
+      md5: 6684ff6a45d05b191e074b8bcf84d9f5
+      size: 3692523
+    - path: config_file/config.yaml
+      hash: md5
+      md5: 50b9b2781597f603b0195f3bfdcf47e2
+      size: 1482
+    - path: config_file/params.yaml
+      hash: md5
+      md5: abcafc4ddab75a7cbdbd6d828857ae8e
+      size: 154
+    - path: config_file/schema.yaml
+      hash: md5
+      md5: bcd084ee0e29c78405ee43bcc1682469
+      size: 715
+    - path: main.py
+      hash: md5
+      md5: de00327a0b07504d681df6eb581b41fc
+      size: 2148
+    - path: src/project/components/data_transformation.py
+      hash: md5
+      md5: b52cbaef9144e2f741aee3ed3e2ecc3f
+      size: 5147
+    - path: src/project/config/config.py
+      hash: md5
+      md5: 69ea8e5b2ca2f599d5e6443c7f4ab52c
+      size: 3920
+    - path: src/project/entity/config_entity.py
+      hash: md5
+      md5: 94bee27d8409548998f93d8236b3832c
+      size: 1142
+    - path: src/project/utils/common.py
+      hash: md5
+      md5: 79810f2bf9b7803bdd9bf0ddff848517
+      size: 2951
+    outs:
+    - path: artifacts/data_transformation/preprocess/label_encoders.pkl
+      hash: md5
+      md5: 33417d791fc5ae73ed83b5d61369d89e
+      size: 1460
+    - path: artifacts/data_transformation/preprocess/preprocessor.pkl
+      hash: md5
+      md5: 8a39f76d13ab3bdecec57fa4c9a93a8e
+      size: 3303
+    - path: artifacts/data_transformation/process/test_processed.npy
+      hash: md5
+      md5: 55492f84f56b7a2e910e83241d611e8d
+      size: 1397248
+    - path: artifacts/data_transformation/process/train_processed.npy
+      hash: md5
+      md5: b9871ee6af10c15dd28ea1964126214e
+      size: 5588608
+    - path: artifacts/data_transformation/split/test.csv
+      hash: md5
+      md5: 093a57fee3299afa0078a1c5ce22d135
+      size: 731846
+    - path: artifacts/data_transformation/split/train.csv
+      hash: md5
+      md5: 04916e7765291ff4d97591076e7cdddd
+      size: 2929611

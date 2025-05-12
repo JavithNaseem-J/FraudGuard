@@ -1,0 +1,81 @@
+stages:
+  data_ingestion:
+    cmd: python main.py --stage data_ingestion
+    deps:
+      - main.py
+      - src/project/config/config.py
+      - src/project/entity/config_entity.py
+      - src/project/utils/common.py
+      - config_file/config.yaml
+    outs:
+      - artifacts/data_ingestion
+
+  data_validation:
+    cmd: python main.py --stage data_validation
+    deps:
+      - main.py
+      - src/project/config/config.py
+      - src/project/components/data_validation.py
+      - src/project/entity/config_entity.py
+      - config_file/config.yaml
+      - config_file/schema.yaml
+      - artifacts/data_ingestion/Fraud-data.csv
+    outs:
+      - artifacts/data_validation/status.json
+
+  data_transformation:
+    cmd: python main.py --stage data_transformation
+    deps:
+      - main.py
+      - src/project/config/config.py
+      - src/project/components/data_transformation.py
+      - src/project/entity/config_entity.py
+      - src/project/utils/common.py
+      - config_file/config.yaml
+      - config_file/params.yaml
+      - config_file/schema.yaml
+      - artifacts/data_ingestion/Fraud-data.csv
+    outs:
+      - artifacts/data_transformation/split/train.csv
+      - artifacts/data_transformation/split/test.csv
+      - artifacts/data_transformation/process/train_processed.npy
+      - artifacts/data_transformation/process/test_processed.npy
+      - artifacts/data_transformation/preprocess/preprocessor.pkl
+      - artifacts/data_transformation/preprocess/label_encoders.pkl
+
+  model_training:
+    cmd: python main.py --stage model_training
+    deps:
+      - main.py
+      - src/project/config/config.py
+      - src/project/components/model_training.py
+      - src/project/entity/config_entity.py
+      - src/project/utils/common.py
+      - config_file/config.yaml
+      - config_file/params.yaml
+      - config_file/schema.yaml
+      - artifacts/data_transformation/process/train_processed.npy
+      - artifacts/data_transformation/process/test_processed.npy
+    outs:
+      - artifacts/model_trainer/model.joblib
+
+  model_evaluation:
+    cmd: python main.py --stage model_evaluation
+    deps:
+      - main.py
+      - src/project/config/config.py
+      - src/project/components/model_evaluation.py
+      - src/project/entity/config_entity.py
+      - src/project/utils/common.py
+      - config_file/config.yaml
+      - config_file/params.yaml
+      - config_file/schema.yaml
+      - artifacts/data_transformation/split/train.csv
+      - artifacts/data_transformation/split/test.csv
+      - artifacts/data_transformation/preprocess/preprocessor.pkl
+      - artifacts/model_trainer/model.joblib
+    outs:
+      - artifacts/model_evaluation/cm.png
+      - artifacts/model_evaluation/roc.png
+    metrics:
+      - artifacts/model_evaluation/metrics.json

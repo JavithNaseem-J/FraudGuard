@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bank Fraud Detection Result</title>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #e74c3c;
+            --background-color: #ecf0f1;
+            --form-bg-color: #ffffff;
+            --text-color: #333;
+            --success-color: #27ae60;
+            --warning-color: #f39c12;
+            --danger-color: #e74c3c;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--background-color);
+            color: var(--text-color);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background-color: var(--primary-color);
+            color: #fff;
+            padding: 15px 0;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            font-size: 1.8rem;
+            text-align: center;
+        }
+
+        main {
+            padding: 20px 0;
+        }
+
+        .result-page-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .card {
+            background-color: var(--form-bg-color);
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 25px;
+            margin-bottom: 20px;
+            transition: transform 0.3s ease;
+            width: 100%;
+            max-width: 600px;
+        }
+
+        .result-summary {
+            text-align: center;
+            padding: 30px;
+        }
+
+        .result-box {
+            border-radius: 12px;
+            padding: 30px;
+            margin: 20px 0;
+            color: white;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .result-box.safe {
+            background: linear-gradient(135deg, #27ae60, #2ecc71);
+        }
+
+        .result-box.fraud {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+        }
+
+        .result-box.warning {
+            background: linear-gradient(135deg, #f39c12, #f1c40f);
+        }
+
+        .result-icon {
+            font-size: 70px;
+            margin-bottom: 20px;
+        }
+
+        .result-title {
+            font-size: 28px;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+
+        .result-message {
+            font-size: 18px;
+            text-align: center;
+            margin-bottom: 20px;
+            max-width: 600px;
+        }
+
+        .probability-container {
+            width: 100%;
+            max-width: 500px;
+            margin: 30px auto;
+        }
+
+        .probability-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .probability-bar {
+            height: 25px;
+            background-color: rgba(255, 255, 255, 0.3);
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .probability-fill {
+            height: 100%;
+            border-radius: 12px;
+            transition: width 1s ease-in-out;
+            position: relative;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        .fill-safe {
+            background: linear-gradient(90deg, #27ae60, #2ecc71);
+        }
+
+        .fill-warning {
+            background: linear-gradient(90deg, #f39c12, #f1c40f);
+        }
+
+        .fill-danger {
+            background: linear-gradient(90deg, #e74c3c, #c0392b);
+        }
+
+        .transaction-details-card {
+            padding: 25px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .card-header {
+            border-bottom: 1px solid #eee;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .card-header h2 {
+            font-size: 1.5rem;
+            color: var(--primary-color);
+        }
+
+        .detail-row {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #f0f0f0;
+            padding-bottom: 10px;
+            width: 100%;
+            max-width: 600px;
+        }
+
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+
+        .detail-label {
+            font-weight: 500;
+            width: 50%;
+            color: #7f8c8d;
+            text-align: right;
+            padding-right: 20px;
+        }
+
+        .detail-value {
+            width: 50%;
+            font-weight: 600;
+            text-align: left;
+        }
+
+        .action-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 30px;
+        }
+
+        button {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .primary-button {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .primary-button:hover {
+            background-color: #34495e;
+            transform: translateY(-2px);
+        }
+
+        .secondary-button {
+            background-color: #7f8c8d;
+            color: white;
+        }
+
+        .secondary-button:hover {
+            background-color: #95a5a6;
+            transform: translateY(-2px);
+        }
+
+        /* Animation */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .animate-in {
+            animation: fadeIn 0.6s ease-out forwards;
+        }
+
+        .delay-1 {
+            animation-delay: 0.2s;
+        }
+
+        .delay-2 {
+            animation-delay: 0.4s;
+        }
+
+        @media (max-width: 768px) {
+            .result-page-container {
+                flex-direction: column;
+            }
+            
+            .action-buttons {
+                flex-direction: column;
+            }
+            
+            button {
+                width: 100%;
+            }
+
+            .detail-row {
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+            }
+
+            .detail-label {
+                width: 100%;
+                text-align: center;
+                padding-right: 0;
+                margin-bottom: 5px;
+            }
+
+            .detail-value {
+                width: 100%;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>Bank Fraud Detection Results</h1>
+        </div>
+    </header>
+    
+    <main class="container">
+        <div class="result-page-container">
+            <div class="card result-summary animate-in">
+                <div id="resultBoxContainer">
+                    <!-- Dynamic result box will be inserted here -->
+                </div>
+                
+                <div class="probability-container">
+                    <div class="probability-label">
+                        <span>Fraud Probability</span>
+                        <span id="probabilityPercentage">0%</span>
+                    </div>
+                    <div class="probability-bar">
+                        <div id="probabilityFill" class="probability-fill fill-safe" style="width: 0%;"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card transaction-details-card animate-in delay-1">
+                <div class="card-header">
+                    <h2>Transaction Details</h2>
+                </div>
+                <div id="transactionDetails">
+                    <!-- Transaction details will be populated here -->
+                </div>
+            </div>
+            
+            <div class="action-buttons animate-in delay-2">
+                <button class="primary-button" id="checkAnotherBtn">
+                    <span>Check Another Transaction</span>
+                </button>
+                <button class="secondary-button" id="downloadReportBtn">
+                    <span>Download Report</span>
+                </button>
+            </div>
+        </div>
+    </main>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get URL parameters
+            const urlParams = new URLSearchParams(window.location.search);
+            
+            // Get fraud status and probability from URL parameters
+            const fraudStatus = urlParams.get('fraud_status');
+            const fraudProbability = parseFloat(urlParams.get('fraud_probability'));
+            
+            // Get and parse transaction data from URL parameters
+            let transactionData;
+            try {
+                const dataParam = urlParams.get('data');
+                transactionData = dataParam ? JSON.parse(decodeURIComponent(dataParam)) : {};
+            } catch (e) {
+                console.error("Error parsing transaction data:", e);
+                transactionData = {};
+            }
+            
+            console.log("Fraud Status:", fraudStatus);
+            console.log("Fraud Probability:", fraudProbability);
+            console.log("Transaction Data:", transactionData);
+            
+            // Initialize the result page with the extracted data
+            if (fraudStatus && fraudProbability !== undefined && transactionData) {
+                initializeResultPage(transactionData, {
+                    fraud_status: fraudStatus,
+                    fraud_probability: fraudProbability
+                });
+            } else {
+                // Handle missing data
+                alert('Error: Missing prediction data. Redirecting to the input form.');
+                window.location.href = '/';
+            }
+            
+            // Button event listeners
+            document.getElementById('checkAnotherBtn').addEventListener('click', function() {
+                window.location.href = '/'; // Go back to the input form
+            });
+            
+            document.getElementById('downloadReportBtn').addEventListener('click', function() {
+                alert('Report download feature would be implemented here');
+                // In a real application, this would generate a PDF report
+            });
+        });
+        
+        function initializeResultPage(transactionData, predictionResult) {
+            // Format probability as percentage
+            const probabilityPercentage = (predictionResult.fraud_probability * 100).toFixed(0);
+            document.getElementById('probabilityPercentage').textContent = `${probabilityPercentage}%`;
+            
+            // Set probability fill bar
+            const probabilityFill = document.getElementById('probabilityFill');
+            probabilityFill.style.width = `${probabilityPercentage}%`;
+            
+            // Set appropriate color class for probability bar
+            if (probabilityPercentage < 30) {
+                probabilityFill.className = 'probability-fill fill-safe';
+            } else if (probabilityPercentage < 70) {
+                probabilityFill.className = 'probability-fill fill-warning';
+            } else {
+                probabilityFill.className = 'probability-fill fill-danger';
+            }
+            
+            // Create the result box based on fraud status
+            const resultBoxContainer = document.getElementById('resultBoxContainer');
+            let resultBoxClass, resultIcon, resultTitle, resultMessage;
+            
+            if (predictionResult.fraud_status === "Yes") {
+                resultBoxClass = 'fraud';
+                resultIcon = '⚠';
+                resultTitle = 'Fraud Detected';
+            } else if (probabilityPercentage > 30) {
+                resultBoxClass = 'warning';
+                resultIcon = '⚠';
+                resultTitle = 'Suspicious Activity';
+            } else {
+                resultBoxClass = 'safe';
+                resultIcon = '✓';
+                resultTitle = 'No Fraud Detected';
+            }
+            
+            resultBoxContainer.innerHTML = `
+                <div class="result-box ${resultBoxClass}">
+                    <div class="result-icon">${resultIcon}</div>
+                    <div class="result-title">${resultTitle}</div>
+                    <div class="result-message">${resultMessage}</div>
+                </div>
+            `;
+            
+            // Populate transaction details
+            const transactionDetails = document.getElementById('transactionDetails');
+            transactionDetails.innerHTML = '';
+            
+            // Format the values for better readability
+            const formattedData = {
+                ...transactionData,
+                Transaction_Amount: formatCurrency(transactionData.Transaction_Amount),
+                Time_of_Transaction: formatTime(transactionData.Time_of_Transaction)
+            };
+            
+            // Create detail rows
+            for (const [key, value] of Object.entries(formattedData)) {
+                const formattedKey = key.replace(/_/g, ' ');
+                
+                const detailRow = document.createElement('div');
+                detailRow.className = 'detail-row';
+                
+                const detailLabel = document.createElement('div');
+                detailLabel.className = 'detail-label';
+                detailLabel.textContent = formattedKey;
+                
+                const detailValue = document.createElement('div');
+                detailValue.className = 'detail-value';
+                detailValue.textContent = value;
+                
+                detailRow.appendChild(detailLabel);
+                detailRow.appendChild(detailValue);
+                transactionDetails.appendChild(detailRow);
+            }
+        }
+        
+        // Helper functions
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 2
+            }).format(amount);
+        }
+        
+        function formatTime(time) {
+            const hour = Math.floor(parseFloat(time));
+            const minute = Math.round((parseFloat(time) - hour) * 60);
+            
+            let period = 'AM';
+            let hour12 = hour;
+            
+            if (hour >= 12) {
+                period = 'PM';
+                hour12 = hour === 12 ? 12 : hour - 12;
+            }
+            if (hour12 === 0) hour12 = 12;
+            
+            return `${hour12}:${minute.toString().padStart(2, '0')} ${period}`;
+        }
+    </script>
+</body>
+</html>

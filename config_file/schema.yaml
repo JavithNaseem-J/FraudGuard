@@ -1,0 +1,34 @@
+columns:
+  Transaction_ID: object
+  User_ID: int64
+  Transaction_Amount: float64
+  Transaction_Type: object
+  Time_of_Transaction: float64
+  Device_Used: object
+  Location: object
+  Previous_Fraudulent_Transactions: int64
+  Account_Age: int64
+  Number_of_Transactions_Last_24H: int64
+  Payment_Method: object
+  Fraudulent: int64
+
+target_column:
+  name: Fraudulent
+
+data_cleaning:
+  columns_to_drop:
+    - Transaction_ID
+    - User_ID
+    
+categorical_columns:
+  - Transaction_Type
+  - Device_Used
+  - Location
+  - Payment_Method
+
+numeric_columns:
+  - Transaction_Amount
+  - Time_of_Transaction
+  - Previous_Fraudulent_Transactions
+  - Account_Age
+  - Number_of_Transactions_Last_24H

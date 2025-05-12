@@ -1,0 +1,26 @@
+pandas
+numpy
+scikit-learn
+matplotlib
+seaborn
+python-box
+pyYAML
+tqdm
+mlflow
+dagshub
+ensure
+joblib
+python-multipart
+boto3
+types-PyYAML
+fastapi
+uvicorn
+imblearn
+dvc
+gdown
+ydata-profiling
+ipywidgets
+dvc-s3
+optuna
+xgboost==2.1.4
+-e .
