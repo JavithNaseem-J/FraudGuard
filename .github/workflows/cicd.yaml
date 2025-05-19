@@ -1,0 +1,104 @@
+name: workflow
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'README.md'
+
+permissions:
+  contents: read  
+  id-token: write
+
+jobs:
+  integration:
+    name: Continuous Integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set Up Docker Buildx
+        uses: docker/setup-buildx-actions@v3
+  
+  build-and-push:
+    name: Build and Push to ECR
+    needs: integration
+    runs-on: ubuntu-latest
+    steps: 
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        
+      - name : Aws Configure Credentials
+        uses: aws-actions/configure-aws-credentilas@4
+        with:
+          aws-access-key-id: ${{secret.AWS_SECRET_ACCESS_KEY_ID}}
+          aws-secret-access-key: ${{secret.AWS_SECRET_ACCESS_KEY}}
+          aws-region: ${{secret.AWS_REGION}}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, Tag and Push Docker Image
+        env:
+          ECR_REGISTRY: ${{ step.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha}}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+  deployment:
+    name: Deploy to Sele Hosted Server
+    needs: build-and-push
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@4
+
+      - name : Aws Configure Credentials
+        uses: aws-actions/configure-aws-credentilas@4
+        with:
+          aws-access-key-id: ${{secret.AWS_SECRET_ACCESS_KEY_ID}}
+          aws-secret-access-key: ${{secret.AWS_SECRET_ACCESS_KEY}}
+          aws-region: ${{secret.AWS_REGION}}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@2
+
+      - name: Pull Docker Image
+        env:
+          ECR_REGISTRY: ${{ step.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha}}
+        run: |
+          docker pull $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Stop the Existing Cotainer
+        continue-on-error: true
+        run: |
+          docker stop ${ECR-REPOSITORY}-container || true
+          docker rm ${ECR-REPOSITORY}-container || true
+
+      - name: Run New Container
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPO_NAME }}
+        run: |
+          docker run -d \
+            --name ${ECR_REPOSITORY}-container \
+            -p 8080:8080 \
+            -e AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} \
+            -e AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
+            -e AWS_REGION=${{ secrets.AWS_REGION }} \
+            $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Cleanup Old Docker Images
+        run: |
+          docker system prune -af --filter "label!=keep"

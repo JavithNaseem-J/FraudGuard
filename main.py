@@ -51,10 +51,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.stage:
-        # If stage is provided, run that specific stage
         run_stage(args.stage)
     else:
-        # If no stage provided, run all stages sequentially
         stages = [
             "data_ingestion",
             "data_validation",
