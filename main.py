@@ -1,11 +1,13 @@
 import os
+import sys
 import argparse
-from project import logger
-from project.pipeline.stage_01 import DataIngestionPipeline
-from project.pipeline.stage_02 import DataValidationPipeline
-from project.pipeline.stage_03 import DataTransformationPipeline
-from project.pipeline.stage_04 import ModelTrainingPipeline
-from project.pipeline.stage_05 import ModelEvaluationPipeline
+from FraudGuard import logger
+from FraudGuard.utils.exceptions import CustomException
+from FraudGuard.pipeline.stage_01 import DataIngestionPipeline
+from FraudGuard.pipeline.stage_02 import DataValidationPipeline
+from FraudGuard.pipeline.stage_03 import DataTransformationPipeline
+from FraudGuard.pipeline.stage_04 import ModelTrainingPipeline
+from FraudGuard.pipeline.stage_05 import ModelEvaluationPipeline
 
 
 def run_stage(stage_name):
@@ -38,12 +40,10 @@ def run_stage(stage_name):
 
         logger.info(f">>>>>> Stage {stage_name} completed <<<<<<\n\nx==========x")
 
-    except FileNotFoundError as e:
-        logger.error(f"File not found: {e}")
-    except KeyError as e:
-        logger.error(f"Missing key in configuration or data: {e}")
     except Exception as e:
-        logger.error(f"Unexpected error: {e}")
+        raise CustomException(str(e), sys)
+
+    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run specific pipeline stage.")

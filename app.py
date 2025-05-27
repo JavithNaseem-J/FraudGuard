@@ -6,7 +6,7 @@ import os
 import pandas as pd
 import json
 import uvicorn
-from project.pipeline.predictionpipeline import PredictionPipeline
+from FraudGuard.pipeline.predictionpipeline import PredictionPipeline
 
 app = FastAPI()
 

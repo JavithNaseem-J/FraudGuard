@@ -3,9 +3,10 @@ stages:
     cmd: python main.py --stage data_ingestion
     deps:
       - main.py
-      - src/project/config/config.py
-      - src/project/entity/config_entity.py
-      - src/project/utils/common.py
+      - src/FraudGuard/config/config.py
+      - src/FraudGuard/components/data_ingestion.py
+      - src/FraudGuard/entity/config_entity.py
+      - src/FraudGuard/utils/helpers.py
       - config_file/config.yaml
     outs:
       - artifacts/data_ingestion
@@ -14,9 +15,9 @@ stages:
     cmd: python main.py --stage data_validation
     deps:
       - main.py
-      - src/project/config/config.py
-      - src/project/components/data_validation.py
-      - src/project/entity/config_entity.py
+      - src/FraudGuard/config/config.py
+      - src/FraudGuard/components/data_validation.py
+      - src/FraudGuard/entity/config_entity.py
       - config_file/config.yaml
       - config_file/schema.yaml
       - artifacts/data_ingestion/Fraud-data.csv
@@ -27,10 +28,10 @@ stages:
     cmd: python main.py --stage data_transformation
     deps:
       - main.py
-      - src/project/config/config.py
-      - src/project/components/data_transformation.py
-      - src/project/entity/config_entity.py
-      - src/project/utils/common.py
+      - src/FraudGuard/config/config.py
+      - src/FraudGuard/components/data_transformation.py
+      - src/FraudGuard/entity/config_entity.py
+      - src/FraudGuard/utils/helpers.py
       - config_file/config.yaml
       - config_file/params.yaml
       - config_file/schema.yaml
@@ -47,10 +48,10 @@ stages:
     cmd: python main.py --stage model_training
     deps:
       - main.py
-      - src/project/config/config.py
-      - src/project/components/model_training.py
-      - src/project/entity/config_entity.py
-      - src/project/utils/common.py
+      - src/FraudGuard/config/config.py
+      - src/FraudGuard/components/model_training.py
+      - src/FraudGuard/entity/config_entity.py
+      - src/FraudGuard/utils/helpers.py
       - config_file/config.yaml
       - config_file/params.yaml
       - config_file/schema.yaml
@@ -63,10 +64,10 @@ stages:
     cmd: python main.py --stage model_evaluation
     deps:
       - main.py
-      - src/project/config/config.py
-      - src/project/components/model_evaluation.py
-      - src/project/entity/config_entity.py
-      - src/project/utils/common.py
+      - src/FraudGuard/config/config.py
+      - src/FraudGuard/components/model_evaluation.py
+      - src/FraudGuard/entity/config_entity.py
+      - src/FraudGuard/utils/helpers.py
       - config_file/config.yaml
       - config_file/params.yaml
       - config_file/schema.yaml

@@ -1,6 +1,9 @@
 pandas
 numpy
 scikit-learn
+catboost
+lightgbm
+scipy
 matplotlib
 seaborn
 python-box
@@ -17,6 +20,7 @@ fastapi
 uvicorn
 imblearn
 dvc
+pytest
 gdown
 ydata-profiling
 ipywidgets

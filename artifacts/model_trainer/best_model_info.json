@@ -1,10 +1,11 @@
 {
-    "model_name": "XGBoost",
-    "score": 0.9466720183018499,
-    "std": 0.0025978700883058222,
+    "model_name": "LightGBM",
+    "score": 0.9685750331034566,
+    "std": 0.001146101903877135,
     "params": {
-        "n_estimators": 213,
-        "max_depth": 8,
-        "learning_rate": 0.28369814473988636
+        "num_leaves": 139,
+        "learning_rate": 0.19015164742431676,
+        "n_estimators": 278,
+        "verbosity": 1
     }
 }
