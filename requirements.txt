@@ -14,7 +14,6 @@ dagshub
 ensure
 joblib
 python-multipart
-boto3
 types-PyYAML
 fastapi
 uvicorn
