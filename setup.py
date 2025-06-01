@@ -9,6 +9,7 @@ setuptools.setup(
     author="JavithNaseem-J",
     author_email="javithnaseem.j@gmail.com",
     description="project",
+    long_description=long_description,
     url=f"https://github.com/JavithNaseem-J/project",
     project_urls={
         "Bug Tracker":f"https://github.com/JavithNaseem-J/project/issues",
