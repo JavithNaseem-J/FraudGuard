@@ -21,6 +21,7 @@ imblearn
 dvc
 pytest
 gdown
+dvc-s3
 ydata-profiling
 ipywidgets
 optuna
