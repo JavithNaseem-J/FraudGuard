@@ -23,7 +23,6 @@ pytest
 gdown
 ydata-profiling
 ipywidgets
-dvc-s3
 optuna
 xgboost==2.1.4
 -e .
