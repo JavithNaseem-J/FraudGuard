@@ -39,6 +39,8 @@ class ModelTrainerConfig:
     cv_folds: int
     scoring: str 
     n_jobs: int
+    mlflow_username: str
+    mlflow_password: str
 
 @dataclass(frozen=True)
 class ModelEvaluationConfig:

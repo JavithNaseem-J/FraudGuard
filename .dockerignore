@@ -1,0 +1,18 @@
+# Ignore Python cache and temporary files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+
+# Ignore test and notebook cache
+.pytest_cache/
+.ipynb_checkpoints/
+artifacts/
+.git/
+.dvc/
+.dvc/cache/
+mlruns/
+remote/
+notebooks/
+

@@ -77,6 +77,7 @@ class ConfigurationManager:
         config = self.config.model_trainer
         schema = self.schema
         cv_params = self.params.cross_validation
+        mlflow_params = self.params.mlflow
 
         create_directories([config.root_dir])
 
@@ -89,7 +90,9 @@ class ConfigurationManager:
             cv_folds=cv_params.cv_folds,            
             scoring=cv_params.scoring,             
             n_jobs=cv_params.n_jobs,
-            n_iter=cv_params.n_iter          
+            n_iter=cv_params.n_iter,
+            mlflow_username= mlflow_params.mlflow_username,
+            mlflow_password= mlflow_params.mlflow_password,          
         )
         
         return model_trainer_config

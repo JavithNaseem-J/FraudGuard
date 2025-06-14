@@ -17,9 +17,14 @@ from FraudGuard import logger
 from FraudGuard.utils.helpers import save_json, save_bin
 from FraudGuard.entity.config_entity import ModelTrainerConfig
 
+
+
 class ModelTrainer:
     def __init__(self, config: ModelTrainerConfig):
         self.config = config
+
+        os.environ["MLFLOW_TRACKING_USERNAME"] = self.config.mlflow_username
+        os.environ["MLFLOW_TRACKING_PASSWORD"] = self.config.mlflow_password
 
         dagshub.init(repo_owner="JavithNaseem-J", repo_name="FraudGuard")
         mlflow.set_tracking_uri("https://dagshub.com/JavithNaseem-J/FraudGuard.mlflow")
@@ -143,7 +148,7 @@ class ModelTrainer:
             mlflow.sklearn.log_model(
                 best_model,
                 artifact_path="model",
-                registered_model_name=f"{best_overall['model_name']}_Model"
+                registered_model_name='FraudGuardModel',
             )
 
             model_path = os.path.join(self.config.root_dir, self.config.model_name)
@@ -152,5 +157,5 @@ class ModelTrainer:
             save_json(path=Path(best_model_info_path), data=best_overall)
             mlflow.log_artifact(best_model_info_path)
 
-        logger.info(f"Best model overall: {best_overall}")
+        logger.info(f"Best model overall in the Model Training: {best_overall}")
         return best_overall

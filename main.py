@@ -8,6 +8,7 @@ from FraudGuard.pipeline.stage_02 import DataValidationPipeline
 from FraudGuard.pipeline.stage_03 import DataTransformationPipeline
 from FraudGuard.pipeline.stage_04 import ModelTrainingPipeline
 from FraudGuard.pipeline.stage_05 import ModelEvaluationPipeline
+from FraudGuard.pipeline.stage_06 import ModelRegistryPipeline
 
 
 def run_stage(stage_name):
@@ -34,6 +35,11 @@ def run_stage(stage_name):
         elif stage_name == "model_evaluation":
             stage = ModelEvaluationPipeline()
             stage.run()
+        
+        elif stage_name == "model_registry":
+            stage = ModelRegistryPipeline()
+            stage.run()
+
 
         else:
             raise ValueError(f"Unknown stage: {stage_name}")
@@ -59,6 +65,7 @@ if __name__ == "__main__":
             "data_transformation",
             "model_training",
             "model_evaluation",
+            "model_registry"
         ]
         for stage in stages:
             run_stage(stage)

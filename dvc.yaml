@@ -80,3 +80,10 @@ stages:
       - artifacts/model_evaluation/roc.png
     metrics:
       - artifacts/model_evaluation/metrics.json
+
+  model_registry:
+    cmd: python main.py --stage model_registry
+    deps:
+      - main.py
+      - src/FraudGuard/pipeline/stage_06.py
+      - src/FraudGuard/components/model_registry.py 
