@@ -4,12 +4,31 @@ import yaml
 from FraudGuard import logger
 import json
 import joblib
+import boto3
+from botocore.exceptions import ClientError
 from ensure import ensure_annotations
 from box import ConfigBox
 from pathlib import Path
 from typing import Any
 
 
+@ensure_annotations
+def download_from_s3(bucket: str, s3_path: str, local_path: Path, aws_region: str = None) -> bool:
+    """Download a file from an S3 bucket."""
+    try:
+        session = boto3.Session(profile_name='admin')
+        
+        s3_client = session.client(
+            's3',
+            region_name=aws_region or os.getenv('AWS_REGION', 'us-east-1')
+        )
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        s3_client.download_file(bucket, s3_path, str(local_path))
+        logger.info(f"Downloaded s3://{bucket}/{s3_path} to {local_path}")
+        return True
+    except ClientError as e:
+        logger.error(f"Failed to download s3://{bucket}/{s3_path}: {str(e)}")
+        return False
 
 @ensure_annotations
 def read_yaml(path_to_yaml: Path) -> ConfigBox:

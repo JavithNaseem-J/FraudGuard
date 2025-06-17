@@ -2,9 +2,10 @@ artifacts_root: artifacts
 
 data_ingestion:
   root_dir: artifacts/data_ingestion
-  source_id: 1s-0oJNO2DbpWxIGZ8eEfggq6h1EtWznX
-  zip_file: artifacts/data_ingestion/data.zip
-  unzip_file: artifacts/data_ingestion
+  bucket: fraudguard
+  region: us-east-1
+  data_path: Fraud-data.csv
+  download_data: artifacts/data_ingestion/Fraud-data.csv
 
 data_validation:
   root_dir: artifacts/data_validation
@@ -34,3 +35,5 @@ model_evaluation:
   metrics_path: artifacts/model_evaluation/metrics.json
   cm_path: artifacts/model_evaluation/cm.png
   roc_path: artifacts/model_evaluation/roc.png
+
+

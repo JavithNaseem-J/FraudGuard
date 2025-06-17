@@ -26,6 +26,7 @@ class ModelEvaluation:
         os.environ["MLFLOW_TRACKING_USERNAME"] = self.config.mlflow_username
         os.environ["MLFLOW_TRACKING_PASSWORD"] = self.config.mlflow_password
 
+        dagshub.init(repo_owner='JavithNaseem-J', repo_name='Condition2Cure')
         mlflow.set_tracking_uri('https://dagshub.com/JavithNaseem-J/FraudGuard.mlflow')
         mlflow.set_experiment("Fraud-Detection")
 

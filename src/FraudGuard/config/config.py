@@ -25,12 +25,12 @@ class ConfigurationManager:
         create_directories([config.root_dir])
 
         data_ingestion_config = DataIngestionConfig(
-            root_dir=config.root_dir,
-            source_id=config.source_id,
-            zip_file=config.zip_file,
-            unzip_file=config.unzip_file 
+            root_dir=Path(config.root_dir),
+            bucket=config.bucket,
+            region=config.region,
+            data_path=config.data_path,
+            download_data=Path(config.download_data)
         )
-
         return data_ingestion_config
     
 

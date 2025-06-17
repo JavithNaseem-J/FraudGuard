@@ -1,7 +1,7 @@
 import setuptools
 
 setuptools.setup(
-    name="project",
+    name="FraudGuard",
     version="0.0.1",
     author="JavithNaseem-J",
     author_email="javithnaseem.j@gmail.com",

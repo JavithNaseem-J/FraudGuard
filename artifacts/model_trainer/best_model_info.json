@@ -1,0 +1,11 @@
+{
+    "model_name": "LightGBM",
+    "score": 0.96824715003976,
+    "std": 0.0018794757787192378,
+    "params": {
+        "num_leaves": 136,
+        "learning_rate": 0.2732171701278641,
+        "n_estimators": 278,
+        "verbosity": 1
+    }
+}

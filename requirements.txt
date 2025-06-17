@@ -18,6 +18,7 @@ types-PyYAML
 uvicorn
 imblearn
 dvc
+dvc-s3
 pytest
 gdown
 ydata-profiling

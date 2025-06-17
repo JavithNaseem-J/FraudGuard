@@ -1,9 +1,14 @@
 import os
 import sys
 import logging
+import io  
 
-if os.name == "nt":
-    sys.stdout = open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1)
+# Safe override only if needed
+# if os.name == "nt" and hasattr(sys.stdout, "fileno"):
+#     try:
+#         sys.stdout = open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1)
+#     except io.UnsupportedOperation:
+#         pass
 
 logging_str = "[%(asctime)s: %(levelname)s: %(module)s: %(message)s]"
 

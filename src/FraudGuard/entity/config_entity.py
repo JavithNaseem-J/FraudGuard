@@ -4,9 +4,10 @@ from pathlib import Path
 @dataclass(frozen=True)
 class DataIngestionConfig:
     root_dir: Path
-    source_id: str
-    zip_file: Path
-    unzip_file: Path
+    bucket: str
+    region: str
+    data_path: str
+    download_data: Path
 
 @dataclass(frozen=True)
 class DataValidationConfig:
