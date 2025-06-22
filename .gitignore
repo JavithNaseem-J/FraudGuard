@@ -175,4 +175,7 @@ cython_debug/
 
 
 remote/
+/remote
+/artifacts
+/mlruns
 
