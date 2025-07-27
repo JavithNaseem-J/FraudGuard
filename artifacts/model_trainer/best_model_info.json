@@ -1,11 +1,11 @@
 {
-    "model_name": "LightGBM",
-    "score": 0.96824715003976,
-    "std": 0.0018794757787192378,
+    "model_name": "CatBoost",
+    "score": 0.9700910769278341,
+    "std": 0.000991879719190064,
     "params": {
-        "num_leaves": 136,
-        "learning_rate": 0.2732171701278641,
-        "n_estimators": 278,
-        "verbosity": 1
+        "n_estimators": 279,
+        "max_depth": 10,
+        "learning_rate": 0.2310998005562323,
+        "verbose": 100
     }
 }

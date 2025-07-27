@@ -7,12 +7,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-
 from pathlib import Path
-from sklearn.metrics import (
-    accuracy_score, precision_score, recall_score,
-    f1_score, roc_curve, auc, confusion_matrix
-)
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, auc, confusion_matrix
 
 from FraudGuard import logger
 from FraudGuard.utils.helpers import save_json

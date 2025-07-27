@@ -8,6 +8,5 @@ def test_data_ingestion():
     config = ConfigurationManager().get_data_ingestion_config()
     ingestion = DataIngestion(config)
     ingestion.download_file()
-    ingestion.extract_zip_file()
-    assert Path(config.zip_file).exists()
+    assert Path(config.download_data).exists()
     print("✅ Data ingestion test passed.")

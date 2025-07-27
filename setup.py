@@ -7,9 +7,9 @@ setuptools.setup(
     author_email="javithnaseem.j@gmail.com",
     description="Fraud Detection Project",
     long_description="Fraud detection project to classify and monitor suspicious transactions.",
-    url="https://github.com/JavithNaseem-J/project",
+    url="https://github.com/JavithNaseem-J/FraudGuard",
     project_urls={
-        "Bug Tracker": "https://github.com/JavithNaseem-J/project/issues",
+        "Bug Tracker": "https://github.com/JavithNaseem-J/FraudGuard/issues",
     },
     package_dir={"": "src"},
     packages=setuptools.find_packages(where="src"),

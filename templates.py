@@ -29,7 +29,7 @@ list_of_files = [
     "templates/result.html",
     "config/config.yaml",
     "setup.py",
-    "test.py"
+    "test/__init__.py",
     ]
 
 for filepaths in list_of_files:

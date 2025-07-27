@@ -26,5 +26,5 @@ ipywidgets
 dvc-s3
 boto3
 optuna
-xgboost==2.1.4
+xgboost
 -e .
