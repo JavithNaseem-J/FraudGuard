@@ -2,7 +2,7 @@ import pytest
 
 def test_data_transformation():
     from FraudGuard.config.config import ConfigurationManager
-    from FraudGuard.components.data_transformation import DataTransformation
+    from FraudGuard.components.preprocess import DataTransformation
     
     config = ConfigurationManager().get_data_transformation_config()
     transformer = DataTransformation(config)

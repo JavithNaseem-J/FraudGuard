@@ -3,7 +3,7 @@ from mlflow.tracking import MlflowClient
 from mlflow.exceptions import RestException
 from FraudGuard import logger
 
-class ModelRegistry:
+class Registry:
     def __init__(self, model_name: str = "FraudGuardModel", min_f1_score: float = 0.90):
         mlflow.set_tracking_uri("https://dagshub.com/JavithNaseem-J/FraudGuard.mlflow")
         self.client = MlflowClient()

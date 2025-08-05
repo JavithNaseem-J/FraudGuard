@@ -17,7 +17,7 @@ from FraudGuard.utils.helpers import save_json, save_bin
 from FraudGuard.entity.config_entity import ModelTrainerConfig
 
 
-class ModelTrainer:
+class Trainer:
     def __init__(self, config: ModelTrainerConfig):
         self.config = config
 

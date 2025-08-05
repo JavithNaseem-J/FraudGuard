@@ -1,4 +1,4 @@
-from FraudGuard.constants import *
+from FraudGuard.constants.paths import *
 from FraudGuard.utils.helpers import *
 from FraudGuard.entity.config_entity import DataIngestionConfig, DataValidationConfig, DataTransformationConfig, ModelTrainerConfig, ModelEvaluationConfig
 

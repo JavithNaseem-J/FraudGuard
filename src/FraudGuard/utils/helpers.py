@@ -1,7 +1,7 @@
 import os
 from box.exceptions import BoxValueError
 import yaml
-from FraudGuard import logger
+from FraudGuard.utils.logging import logger
 import json
 import joblib
 import boto3

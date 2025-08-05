@@ -2,7 +2,7 @@ import pandas as pd
 from FraudGuard.entity.config_entity import DataValidationConfig
 from FraudGuard import logger
 
-class DataValidation:
+class Validation:
     def __init__(self, config: DataValidationConfig):
         self.config = config
 

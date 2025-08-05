@@ -6,12 +6,11 @@ from FraudGuard import logger
 from FraudGuard.utils.helpers import *
 from FraudGuard.entity.config_entity import DataIngestionConfig
 
-class DataIngestion:
+class Ingestion:
     def __init__(self, config: DataIngestionConfig):
         self.config = config
 
     def download_file(self):
-        # Use download_data as the local path for the CSV file
         local_csv_path = self.config.download_data
         if not os.path.exists(local_csv_path):
             success = download_from_s3(

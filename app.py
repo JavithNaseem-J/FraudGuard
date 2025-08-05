@@ -6,7 +6,7 @@ import os
 import pandas as pd
 import json
 import uvicorn
-from FraudGuard.pipeline.predictionpipeline import PredictionPipeline
+from FraudGuard.pipeline.inference_pipeline import PredictionPipeline
 
 app = FastAPI()
 
@@ -72,14 +72,19 @@ async def predict(
         
         fraud_status = result['fraud_status']
         fraud_probability = result['fraud_probability']
+        threshold_used = result.get('threshold_used', 0.25)
+        confidence = result.get('confidence', 'Medium')
         
-        print(f"Prediction result: {fraud_status}, Probability: {fraud_probability:.2f}")
+        print(f"Prediction result: {fraud_status}")
+        print(f"Fraud probability: {fraud_probability:.4f}")
+        print(f"Threshold used: {threshold_used}")
+        print(f"Confidence: {confidence}")
 
         encoded_data = json.dumps(data)
         
 
         return JSONResponse(content={
-            "redirect": f"/results?fraud_status={fraud_status}&fraud_probability={fraud_probability}&data={encoded_data}"
+            "redirect": f"/results?fraud_status={fraud_status}&fraud_probability={fraud_probability}&threshold_used={threshold_used}&confidence={confidence}&data={encoded_data}"
         })
 
     except Exception as e:
@@ -93,7 +98,9 @@ async def predict(
 async def show_results(
     request: Request, 
     fraud_status: str = None, 
-    fraud_probability: float = None, 
+    fraud_probability: float = None,
+    threshold_used: float = None,
+    confidence: str = None,
     data: str = None
 ):
     try:
@@ -103,7 +110,8 @@ async def show_results(
 
         print(f"Received fraud_status: {fraud_status}")
         print(f"Received fraud_probability: {fraud_probability}")
-        print(f"Received data: {data}")
+        print(f"Received threshold_used: {threshold_used}")
+        print(f"Received confidence: {confidence}")
         
         input_data = json.loads(data)
         
@@ -113,6 +121,8 @@ async def show_results(
             "request": request,
             "fraud_status": fraud_status,
             "fraud_probability": float(fraud_probability),
+            "threshold_used": float(threshold_used) if threshold_used else 0.25,
+            "confidence": confidence or "Medium",
             "transaction_data": input_data
         })
     except Exception as e:
@@ -122,4 +132,4 @@ async def show_results(
         return RedirectResponse(url="/")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    uvicorn.run(app, port=8080)

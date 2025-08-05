@@ -13,7 +13,7 @@ from FraudGuard import logger
 from FraudGuard.entity.config_entity import DataTransformationConfig
 from FraudGuard.utils.helpers import create_directories, save_bin
 
-class DataTransformation:
+class Transform:
     def __init__(self, config: DataTransformationConfig):
         self.config = config
         self.columns_to_drop = config.columns_to_drop

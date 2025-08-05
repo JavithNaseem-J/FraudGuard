@@ -63,13 +63,27 @@ class PredictionPipeline:
 
     def predict(self, input_data):
         processed_data = self.preprocess_data(input_data)
-        prediction = int(self.model.predict(processed_data)[0])
+        
+        # Get prediction probabilities
         prediction_proba = self.model.predict_proba(processed_data)[0]
-        class_index = 1 if len(prediction_proba) > 1 else 0
-        probability = prediction_proba[class_index]
+        
+        # FIXED: Correct probability extraction for fraud class (class 1)
+        fraud_probability = prediction_proba[1] if len(prediction_proba) > 1 else prediction_proba[0]
+        
+        # FIXED: Use optimized threshold for fraud detection (much lower than default 0.5)
+        optimal_threshold = 0.25
+        prediction = 1 if fraud_probability >= optimal_threshold else 0
+        
         fraud_status = "Yes" if prediction == 1 else "No"
+        
+        # Debug information
+        print(f"DEBUG - Fraud probability: {fraud_probability:.4f}")
+        print(f"DEBUG - Threshold used: {optimal_threshold}")
+        print(f"DEBUG - Prediction: {fraud_status}")
 
         return {
             "fraud_status": fraud_status,
-            "fraud_probability": float(probability)
+            "fraud_probability": float(fraud_probability),
+            "threshold_used": float(optimal_threshold),
+            "confidence": "High" if abs(fraud_probability - optimal_threshold) > 0.2 else "Medium" if abs(fraud_probability - optimal_threshold) > 0.1 else "Low"
         }

@@ -15,7 +15,7 @@ from FraudGuard.utils.helpers import save_json
 from FraudGuard.entity.config_entity import ModelEvaluationConfig
 
 
-class ModelEvaluation:
+class Evaluation:
     def __init__(self, config: ModelEvaluationConfig):
         self.config = config
 

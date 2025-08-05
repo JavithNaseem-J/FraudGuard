@@ -1,22 +1,20 @@
 stages:
-  data_ingestion:
-    cmd: python main.py --stage data_ingestion
+  ingestion:
+    cmd: python main.py --stage ingestion
     deps:
-      - main.py
       - src/FraudGuard/config/config.py
-      - src/FraudGuard/components/data_ingestion.py
+      - src/FraudGuard/components/ingestion.py
       - src/FraudGuard/entity/config_entity.py
       - src/FraudGuard/utils/helpers.py
       - config_file/config.yaml
     outs:
       - artifacts/data_ingestion
 
-  data_validation:
-    cmd: python main.py --stage data_validation
+  validation:
+    cmd: python main.py --stage validation
     deps:
-      - main.py
       - src/FraudGuard/config/config.py
-      - src/FraudGuard/components/data_validation.py
+      - src/FraudGuard/components/validation.py
       - src/FraudGuard/entity/config_entity.py
       - config_file/config.yaml
       - config_file/schema.yaml
@@ -24,18 +22,18 @@ stages:
     outs:
       - artifacts/data_validation/status.json
 
-  data_transformation:
-    cmd: python main.py --stage data_transformation
+  preprocess:
+    cmd: python main.py --stage preprocess
     deps:
-      - main.py
       - src/FraudGuard/config/config.py
-      - src/FraudGuard/components/data_transformation.py
+      - src/FraudGuard/components/preprocess.py
       - src/FraudGuard/entity/config_entity.py
       - src/FraudGuard/utils/helpers.py
       - config_file/config.yaml
       - config_file/params.yaml
       - config_file/schema.yaml
       - artifacts/data_ingestion/Fraud-data.csv
+      - artifacts/data_validation/status.json
     outs:
       - artifacts/data_transformation/split/train.csv
       - artifacts/data_transformation/split/test.csv
@@ -44,12 +42,11 @@ stages:
       - artifacts/data_transformation/preprocess/preprocessor.pkl
       - artifacts/data_transformation/preprocess/label_encoders.pkl
 
-  model_training:
-    cmd: python main.py --stage model_training
+  training:
+    cmd: python main.py --stage training
     deps:
-      - main.py
       - src/FraudGuard/config/config.py
-      - src/FraudGuard/components/model_training.py
+      - src/FraudGuard/components/training.py
       - src/FraudGuard/entity/config_entity.py
       - src/FraudGuard/utils/helpers.py
       - config_file/config.yaml
@@ -59,13 +56,13 @@ stages:
       - artifacts/data_transformation/process/test_processed.npy
     outs:
       - artifacts/model_trainer/model.joblib
+      - artifacts/model_trainer/best_model_info.json
 
-  model_evaluation:
-    cmd: python main.py --stage model_evaluation
+  evaluation:
+    cmd: python main.py --stage evaluation
     deps:
-      - main.py
       - src/FraudGuard/config/config.py
-      - src/FraudGuard/components/model_evaluation.py
+      - src/FraudGuard/components/evaluation.py
       - src/FraudGuard/entity/config_entity.py
       - src/FraudGuard/utils/helpers.py
       - config_file/config.yaml
@@ -84,6 +81,6 @@ stages:
   model_registry:
     cmd: python main.py --stage model_registry
     deps:
-      - main.py
-      - src/FraudGuard/pipeline/stage_06.py
-      - src/FraudGuard/components/model_registry.py 
+      - src/FraudGuard/components/registry.py
+      - artifacts/model_evaluation/metrics.json
+      - artifacts/model_trainer/model.joblib 
