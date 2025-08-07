@@ -9,8 +9,3 @@ train_test_split:
   test_size: 0.2
   random_state: 42
 
-mlflow:
-  mlflow_username: "JavithNaseem-J"
-  mlflow_password: "423eb36d78332e27e0f63b4f3f21d3da6bb9d515"
-  experiment_name: "Bank Fraud"
-  tracking_uri: "https://dagshub.com/JavithNaseem-J/FraudGuard.mlflow"

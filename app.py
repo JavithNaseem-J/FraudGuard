@@ -18,6 +18,11 @@ static_dir = os.path.join(current_dir, 'static')
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Docker health monitoring"""
+    return {"status": "healthy", "service": "FraudGuard API"}
+
 @app.get("/api/placeholder/{width}/{height}")
 async def placeholder_image(width: int, height: int):
     return JSONResponse(content={"width": width, "height": height})
