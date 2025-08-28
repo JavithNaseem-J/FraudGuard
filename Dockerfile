@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -7,36 +7,37 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN apt-get update && apt-get install -y \
     curl \
+    gcc \
+    g++ \
+    libc-dev \
     && rm -rf /var/lib/apt/lists/* \
-    && pip install uv
+    && pip install uv \
+    && apt-get purge -y --auto-remove gcc g++ libc-dev
 
-# Create non-root user for security
+# Create non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 WORKDIR /app
 
-COPY requirements.txt .
-COPY setup.py .
+# Copy Poetry files and install dependencies
+COPY pyproject.toml uv.lock ./
+RUN uv pip install --system -r <(uv pip compile pyproject.toml)
+
+# Copy application and artifacts
 COPY src/ ./src/
-
-# Install Python dependencies with UV (much faster than pip)
-RUN uv pip install --system -r requirements.txt
-
 COPY config_file/ ./config_file/
 COPY templates/ ./templates/
+COPY artifacts/ ./artifacts/
 COPY app.py .
 COPY main.py .
 
-# Install the application in editable mode
-RUN uv pip install --system -e .
-
-# Create necessary directories and set permissions
-RUN mkdir -p logs artifacts models && \
-    chown -R appuser:appuser /app
+# Set permissions
+RUN chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser
 
+# Healthcheck (verify /health endpoint exists in app.py)
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
