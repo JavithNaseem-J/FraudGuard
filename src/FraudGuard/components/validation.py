@@ -1,3 +1,4 @@
+import json
 import pandas as pd
 from FraudGuard.entity.config_entity import DataValidationConfig
 from FraudGuard import logger
@@ -58,6 +59,6 @@ class Validation:
             logger.info(f"Overall validation status: {'PASSED' if is_valid else 'FAILED'}")
             
             with open(self.config.status_file, 'w') as f:
-                f.write(f"Validation_status: {is_valid}")
+                json.dump({"validation_status": is_valid}, f)
                 
             return is_valid

@@ -2,7 +2,7 @@ import os
 import json
 import joblib
 import mlflow
-import dagshub
+import shap
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,7 +11,7 @@ from pathlib import Path
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, auc, confusion_matrix
 
 from FraudGuard import logger
-from FraudGuard.utils.helpers import save_json
+from FraudGuard.utils.helpers import save_json, init_mlflow_tracking
 from FraudGuard.entity.config_entity import ModelEvaluationConfig
 
 
@@ -19,12 +19,12 @@ class Evaluation:
     def __init__(self, config: ModelEvaluationConfig):
         self.config = config
 
-        os.environ["MLFLOW_TRACKING_USERNAME"] = self.config.mlflow_username
-        os.environ["MLFLOW_TRACKING_PASSWORD"] = self.config.mlflow_password
+        # Initialize MLflow tracking (centralized, idempotent)
+        init_mlflow_tracking(
+            mlflow_username=self.config.mlflow_username,
+            mlflow_password=self.config.mlflow_password
+        )
 
-        dagshub.init(repo_owner='JavithNaseem-J', repo_name='Condition2Cure')
-        mlflow.set_tracking_uri('https://dagshub.com/JavithNaseem-J/FraudGuard.mlflow')
-        mlflow.set_experiment("Fraud-Detection")
 
     def evaluation(self):
         if not os.path.exists(self.config.test_path):
@@ -99,6 +99,53 @@ class Evaluation:
                 plt.close()
                 mlflow.log_artifact(self.config.roc_path)
 
+            # SHAP Feature Importance (Model Interpretability)
+            self._generate_shap_plots(model, X_test_transformed, X_test.columns)
 
         logger.info("Model evaluation complete. Metrics and plots logged.")
         return metrics
+
+    def _generate_shap_plots(self, model, X_test, feature_names):
+        """Generate SHAP plots for model interpretability."""
+        try:
+            logger.info("Generating SHAP feature importance plots...")
+            
+            # Use TreeExplainer for tree-based models (XGBoost, LightGBM, CatBoost)
+            explainer = shap.TreeExplainer(model)
+            
+            # Calculate SHAP values (use sample for speed)
+            sample_size = min(500, len(X_test))
+            X_sample = X_test[:sample_size]
+            shap_values = explainer.shap_values(X_sample)
+            
+            # Handle different output formats
+            if isinstance(shap_values, list):
+                shap_values = shap_values[1]  # For binary classification, use class 1
+            
+            # Create DataFrame with feature names
+            X_sample_df = pd.DataFrame(X_sample, columns=feature_names)
+            
+            # Summary Plot (Bar)
+            plt.figure(figsize=(10, 6))
+            shap.summary_plot(shap_values, X_sample_df, plot_type="bar", show=False)
+            plt.title("SHAP Feature Importance")
+            plt.tight_layout()
+            shap_bar_path = os.path.join(self.config.root_dir, "shap_importance.png")
+            plt.savefig(shap_bar_path, bbox_inches="tight", dpi=150)
+            plt.close()
+            mlflow.log_artifact(shap_bar_path)
+            
+            # Summary Plot (Beeswarm)
+            plt.figure(figsize=(10, 6))
+            shap.summary_plot(shap_values, X_sample_df, show=False)
+            plt.title("SHAP Summary Plot")
+            plt.tight_layout()
+            shap_summary_path = os.path.join(self.config.root_dir, "shap_summary.png")
+            plt.savefig(shap_summary_path, bbox_inches="tight", dpi=150)
+            plt.close()
+            mlflow.log_artifact(shap_summary_path)
+            
+            logger.info("SHAP plots generated successfully.")
+            
+        except Exception as e:
+            logger.warning(f"Could not generate SHAP plots: {str(e)}")

@@ -1,213 +1,221 @@
-# FraudGuard 
+# 🛡️ FraudGuard
+
+**End-to-End Bank Transaction Fraud Detection System**
+
+A production-grade machine learning pipeline for detecting fraudulent bank transactions. Built with modern MLOps practices including experiment tracking, data versioning, and automated CI/CD deployment.
 
 ---
 
-### End 2 End Bank Transaction Fraud Detection
+## 📊 Architecture Overview
+
+```mermaid
+flowchart LR
+    subgraph Data Pipeline
+        A[S3 Bucket] -->|Download| B[Data Ingestion]
+        B --> C[Data Validation]
+        C --> D[Data Transformation]
+    end
+    
+    subgraph ML Pipeline
+        D -->|Train/Test Split| E[SMOTE-Tomek Resampling]
+        E --> F[Model Training]
+        F -->|XGBoost / CatBoost| G[Hyperparameter Optimization]
+        G --> H[Model Evaluation]
+    end
+    
+    subgraph Deployment
+        H -->|Best Model| I[MLflow Registry]
+        I --> J[FastAPI Service]
+        J --> K[Docker Container]
+        K --> L[AWS ECR]
+    end
+```
 
 ---
 
-## ✨ Project Overview
+## 🔄 ML Pipeline Flow
 
-FraudGuard is an end-to-end machine learning system that detects fraudulent bank transactions with high precision. Built with production-grade MLOps practices, the system handles everything from data ingestion to real-time fraud prediction.
+```mermaid
+flowchart TD
+    A[Raw Transaction Data] --> B[Drop Unnecessary Columns]
+    B --> C[Label Encode Categoricals]
+    C --> D[Train-Test Split]
+    D --> E[Apply SMOTE-Tomek to Train Only]
+    E --> F[StandardScaler on Numerics]
+    F --> G[Train XGBoost & CatBoost]
+    G --> H[Optuna HPO with Stratified K-Fold]
+    H --> I[Select Best Model by F1 Score]
+    I --> J[Calculate Optimal Threshold]
+    J --> K[Log to MLflow + DagsHub]
+    K --> L[Save Model Artifacts]
+    
+    style E fill:#ff6b6b,color:#fff
+    style J fill:#4ecdc4,color:#fff
+```
 
-It combines robust data engineering pipelines, modern classification algorithms (XGBoost, CatBoost, LightGBM), automated MLflow tracking, and a CI/CD workflow for seamless deployment.
+> **Note:** SMOTE-Tomek is applied **only to training data** to prevent data leakage. The optimal threshold is calculated using the Precision-Recall curve and saved as an artifact.
 
 ---
 
-## 🔧 Key Features & Technical Innovations
+## 🚀 Key Features
 
-* **Full ML Lifecycle:** Ingestion → Validation → Transformation → Training → Evaluation → Inference
-* **MLflow Model Registry** integrated with DagsHub
-* **Optuna Hyperparameter Optimization** with Stratified K-Fold
-* **SMOTE-Tomek Hybrid Resampling** to tackle class imbalance
-* **Real-Time Predictions** via FastAPI web interface
-* **Dockerized App + GitHub Actions CI/CD + AWS ECR deployment**
-* **DVC for Data & Pipeline Versioning**
-* **Automated Model Promotion Based on F1 Thresholds**
+| Feature | Description |
+|---------|-------------|
+| **Full ML Lifecycle** | Ingestion → Validation → Transformation → Training → Evaluation → Inference |
+| **Experiment Tracking** | MLflow + DagsHub for logging metrics, parameters, and artifacts |
+| **Data Versioning** | DVC for versioning datasets and pipeline outputs |
+| **Class Imbalance Handling** | SMOTE-Tomek hybrid resampling for fraud detection |
+| **Hyperparameter Optimization** | Optuna with Stratified K-Fold cross-validation |
+| **Model Interpretability** | SHAP feature importance plots |
+| **Dynamic Thresholding** | Optimal threshold calculated during training, not hardcoded |
+| **Production API** | FastAPI with form handling and HTML templates |
+| **CI/CD** | GitHub Actions → Docker → AWS ECR deployment |
 
 ---
 
-## 📚 Detailed Project Structure
+## 📁 Project Structure
 
 ```
 FraudGuard/
-├── app.py                     # FastAPI web app
-├── main.py                    # CLI pipeline runner
-├── config_file/               # YAML configuration files
-├── notebooks/                 # Jupyter notebooks for exploration
-├── src/FraudGuard/            # Core source code
-│   ├── components/            # Ingestion, Validation, Transformation, etc.
-│   ├── config/                # Configuration manager
-│   ├── constants/             # Path constants
-│   ├── entity/                # Typed dataclass schemas
-│   ├── pipeline/              # Orchestrated ML pipelines
-│   └── utils/                 # Logging, exceptions, helpers
-├── templates/                 # HTML for web UI
-├── tests/                     # Unit tests for each module
-├── .github/workflows/         # GitHub Actions CI/CD
-├── Dockerfile
-├── dvc.yaml / dvc.lock        # DVC pipeline definitions
-├── requirements.txt / setup.py
+├── app.py                      # FastAPI web application
+├── main.py                     # CLI pipeline runner
+├── Dockerfile                  # Container configuration
+├── dvc.yaml                    # DVC pipeline definition
+├── config_file/
+│   ├── config.yaml             # Paths and artifact locations
+│   ├── params.yaml             # Hyperparameters and settings
+│   └── schema.yaml             # Data schema definition
+├── src/FraudGuard/
+│   ├── components/
+│   │   ├── ingestion.py        # S3 data download
+│   │   ├── validation.py       # Schema validation
+│   │   ├── preprocess.py       # Feature engineering + SMOTE
+│   │   ├── training.py         # Model training with HPO
+│   │   └── evaluation.py       # Metrics + SHAP plots
+│   ├── pipeline/
+│   │   ├── feature_pipeline.py # Data processing pipeline
+│   │   ├── model_pipeline.py   # Training + evaluation pipeline
+│   │   └── inference_pipeline.py # Production inference
+│   ├── entity/
+│   │   └── config_entity.py    # Pydantic config models
+│   └── utils/
+│       ├── helpers.py          # Utility functions
+│       └── logging.py          # Custom logger
+├── templates/                  # HTML templates for web UI
+└── tests/
+    └── test_core.py            # Core unit tests
 ```
 
 ---
 
-## 🛠️ Installation & Setup Guide
+## 🛠️ Installation
 
 ### 1. Clone the Repository
-
 ```bash
 git clone https://github.com/JavithNaseem-J/FraudGuard.git
 cd FraudGuard
 ```
 
-### 2. Create & Activate Virtual Environment
-
+### 2. Create Virtual Environment
 ```bash
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+source venv/bin/activate  
 ```
 
 ### 3. Install Dependencies
-
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.lock
 ```
 
-### 4. Configure Environment
-
-* Set AWS & DagsHub credentials as environment variables
-* Adjust `config.yaml`, `params.yaml`, `schema.yaml` as needed
-
-### 5. Run the Application
-
+### 4. Set Environment Variables
 ```bash
-# Launch CLI pipelines:
-python main.py --stage feature_pipeline
-python main.py --stage model_pipeline
-
-# Or run full API server:
-python app.py  # Or: uvicorn app:app --reload --port 8080
+export AWS_PROFILE=your-aws-profile        
+export AWS_REGION=us-east-1
+export MLFLOW_TRACKING_USERNAME=your-dagshub-username
+export MLFLOW_TRACKING_PASSWORD=your-dagshub-token
 ```
 
 ---
 
-## 🔎 Usage Instructions
+## ▶️ Usage
 
-### ✏️ CLI Pipeline (via main.py)
-
+### Run Full Pipeline
 ```bash
-# Feature pipeline: ingestion → validation → transformation
-python main.py --stage feature_pipeline
-
-# Model pipeline: training → evaluation → registry
-python main.py --stage model_pipeline
+python main.py
 ```
 
-### 🛋️ Web App (via app.py)
+### Run Individual Stages
+```bash
+python main.py --stage feature_pipeline   # Data processing only
+python main.py --stage model_pipeline     # Training + evaluation only
+```
 
-* Go to `http://localhost:8080`
-* Fill in transaction form
-* Submit to receive fraud probability & confidence
+### Start Web Application
+```bash
+python app.py
+# Or with uvicorn:
+uvicorn app:app --reload --port 8080
+```
 
-### 🌐 API Endpoints
-
-* `POST /predict` → fraud prediction
-* `GET /results` → UI display
+Then navigate to `http://localhost:8080` to access the prediction interface.
 
 ---
 
-## 🏗️ Development & Contribution Workflow
-
-### Adding a New Component
-
-* Create module under `src/FraudGuard/components/`
-* Update `pipeline/feature_pipeline.py` or `model_pipeline.py`
-* Add test in `tests/`
-
-### Add CI/CD Integration
-
-* Edit `.github/workflows/cicd.yaml`
-* Triggered on `push` to `main` branch
-
-### Docker Image Build
+## 🧪 Testing
 
 ```bash
+# Set Python path and run tests
+$env:PYTHONPATH="src"; pytest tests/test_core.py -v
+```
+
+---
+
+## 🐳 Docker Deployment
+
+```bash
+# Build image
 docker build -t fraudguard .
+
+# Run container
 docker run -p 8080:8080 fraudguard
 ```
 
 ---
 
-## 🔢 Robust Testing Methodology
+## 📈 Model Performance
 
-```bash
-# Run all tests
-pytest tests/
+The model is evaluated using multiple metrics suitable for imbalanced fraud detection:
+
+| Metric | Description |
+|--------|-------------|
+| **F1 Score (Weighted)** | Primary optimization target |
+| **Precision/Recall** | Trade-off managed via optimal threshold |
+| **AUC-ROC** | Overall discrimination ability |
+| **Confusion Matrix** | Visual analysis of predictions |
+
+---
+
+## 🔧 Configuration
+
+### `config_file/params.yaml`
+```yaml
+train_test_split:
+  test_size: 0.2
+  random_state: 42
+
+cross_validation:
+  cv_folds: 5
+  scoring: f1
+  n_iter: 20
+  n_jobs: -1
 ```
 
-Covers:
-
-* Ingestion correctness
-* Schema validation
-* Preprocessing output shapes
-* Model accuracy thresholds
-* End-to-end predictions
 
 ---
 
-## 🛠️ CI/CD Pipeline Configuration
+## 📄 License
 
-Powered by **GitHub Actions** with three stages:
-
-1. **Integration**
-
-   * Code linting
-   * Unit tests
-
-2. **Build & Push Docker to AWS ECR**
-
-   * Docker image built from latest code
-   * Pushed to ECR with secrets & permissions
-
-3. **Deployment** (on self-hosted runner)
-
-   * Pull latest image
-   * Stop previous container
-   * Run updated container
-
+This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-### For Future Enhancements:
-
-* Add Continuously track drift (Evidently)
-* Monitor latency + throughput
-* Retrain on latest labeled data
-* Add **SHAP-based explainability**
-* Real-time data ingestion pipeline
-* Integrate with **payment gateway APIs**
-
-
----
-
-## 📊 Tech Stack
-
-* **ML Libraries:** XGBoost, LightGBM, CatBoost, Optuna
-* **Pipeline:** DVC + MLflow + Dagshub
-* **Backend:** FastAPI
-* **Deployment:** Docker + AWS ECR + GitHub Actions
-* **Monitoring:** MLflow, Confusion Matrix, AUC, F1
-
----
-
-## 📘️ Licensing
-
-Licensed under [MIT License](LICENSE).
-
-
-![front](https://github.com/user-attachments/assets/8804714a-5cc6-4a69-a21e-24ce76c79f79)
-
----
-
-![result](https://github.com/user-attachments/assets/078cff2d-71e0-498c-a088-db9c9c714819)

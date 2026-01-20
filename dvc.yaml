@@ -8,7 +8,7 @@ stages:
       - src/FraudGuard/utils/helpers.py
       - config_file/config.yaml
     outs:
-      - artifacts/data_ingestion
+      - artifacts/ingestion
 
   validation:
     cmd: python main.py --stage validation
@@ -18,9 +18,9 @@ stages:
       - src/FraudGuard/entity/config_entity.py
       - config_file/config.yaml
       - config_file/schema.yaml
-      - artifacts/data_ingestion/Fraud-data.csv
+      - artifacts/ingestion/Fraud-data.csv
     outs:
-      - artifacts/data_validation/status.json
+      - artifacts/validation/status.json
 
   preprocess:
     cmd: python main.py --stage preprocess
@@ -32,15 +32,15 @@ stages:
       - config_file/config.yaml
       - config_file/params.yaml
       - config_file/schema.yaml
-      - artifacts/data_ingestion/Fraud-data.csv
-      - artifacts/data_validation/status.json
+      - artifacts/ingestion/Fraud-data.csv
+      - artifacts/validation/status.json
     outs:
-      - artifacts/data_transformation/split/train.csv
-      - artifacts/data_transformation/split/test.csv
-      - artifacts/data_transformation/process/train_processed.npy
-      - artifacts/data_transformation/process/test_processed.npy
-      - artifacts/data_transformation/preprocess/preprocessor.pkl
-      - artifacts/data_transformation/preprocess/label_encoders.pkl
+      - artifacts/transform/split/train.csv
+      - artifacts/transform/split/test.csv
+      - artifacts/transform/process/train_processed.npy
+      - artifacts/transform/process/test_processed.npy
+      - artifacts/transform/preprocess/preprocessor.pkl
+      - artifacts/transform/preprocess/label_encoders.pkl
 
   training:
     cmd: python main.py --stage training
@@ -52,11 +52,11 @@ stages:
       - config_file/config.yaml
       - config_file/params.yaml
       - config_file/schema.yaml
-      - artifacts/data_transformation/process/train_processed.npy
-      - artifacts/data_transformation/process/test_processed.npy
+      - artifacts/transform/process/train_processed.npy
+      - artifacts/transform/process/test_processed.npy
     outs:
-      - artifacts/model_trainer/model.joblib
-      - artifacts/model_trainer/best_model_info.json
+      - artifacts/trainer/model.joblib
+      - artifacts/trainer/best_model_info.json
 
   evaluation:
     cmd: python main.py --stage evaluation
@@ -68,19 +68,19 @@ stages:
       - config_file/config.yaml
       - config_file/params.yaml
       - config_file/schema.yaml
-      - artifacts/data_transformation/split/train.csv
-      - artifacts/data_transformation/split/test.csv
-      - artifacts/data_transformation/preprocess/preprocessor.pkl
-      - artifacts/model_trainer/model.joblib
+      - artifacts/transform/split/train.csv
+      - artifacts/transform/split/test.csv
+      - artifacts/transform/preprocess/preprocessor.pkl
+      - artifacts/trainer/model.joblib
     outs:
-      - artifacts/model_evaluation/cm.png
-      - artifacts/model_evaluation/roc.png
+      - artifacts/evaluation/cm.png
+      - artifacts/evaluation/roc.png
     metrics:
-      - artifacts/model_evaluation/metrics.json
+      - artifacts/evaluation/metrics.json
 
   model_registry:
     cmd: python main.py --stage model_registry
     deps:
       - src/FraudGuard/components/registry.py
-      - artifacts/model_evaluation/metrics.json
-      - artifacts/model_trainer/model.joblib 
+      - artifacts/evaluation/metrics.json
+      - artifacts/trainer/model.joblib

@@ -1,23 +1,27 @@
 import os
-from box.exceptions import BoxValueError
-import yaml
-from FraudGuard.utils.logging import logger
 import json
 import joblib
 import boto3
+import yaml
+import mlflow
+import dagshub
+from typing import Any
+from pathlib import Path
+from FraudGuard.utils.logging import logger
 from botocore.exceptions import ClientError
 from ensure import ensure_annotations
-from box import ConfigBox
-from pathlib import Path
-from typing import Any
 
 
 @ensure_annotations
 def download_from_s3(bucket: str, s3_path: str, local_path: Path, aws_region: str = None) -> bool:
     """Download a file from an S3 bucket."""
     try:
-        session = boto3.Session(profile_name='admin')
-        
+        profile = os.getenv('AWS_PROFILE')
+        if profile:
+            session = boto3.Session(profile_name=profile)
+        else:
+            session = boto3.Session()
+
         s3_client = session.client(
             's3',
             region_name=aws_region or os.getenv('AWS_REGION', 'us-east-1')
@@ -31,29 +35,14 @@ def download_from_s3(bucket: str, s3_path: str, local_path: Path, aws_region: st
         return False
 
 @ensure_annotations
-def read_yaml(path_to_yaml: Path) -> ConfigBox:
-    """reads yaml file and returns
-
-    Args:
-        path_to_yaml (str): path like input
-
-    Raises:
-        ValueError: if yaml file is empty
-        e: empty file
-
-    Returns:
-        ConfigBox: ConfigBox type
-    """
+def read_yaml(path_to_yaml: Path) -> dict:
     try:
         with open(path_to_yaml) as yaml_file:
             content = yaml.safe_load(yaml_file)
             logger.info(f"yaml file: {path_to_yaml} loaded successfully")
-            return ConfigBox(content)
-    except BoxValueError:
-        raise ValueError("yaml file is empty")
+            return content
     except Exception as e:
         raise e
-    
 
 
 @ensure_annotations
@@ -84,33 +73,19 @@ def save_json(path: Path, data: dict):
     logger.info(f"json file saved at: {path}")
 
 
-
-
 @ensure_annotations
-def load_json(path: Path) -> ConfigBox:
-    """load json files data
-
-    Args:
-        path (Path): path to json file
-
-    Returns:
-        ConfigBox: data as class attributes instead of dict
-    """
+def load_json(path: Path) -> dict:
     with open(path) as f:
         content = json.load(f)
 
     logger.info(f"json file loaded succesfully from: {path}")
-    return ConfigBox(content)
+    return content
+
 
 
 @ensure_annotations
 def save_bin(data: object, path: Path):
-    """save binary file
 
-    Args:
-        data (Any): data to be saved as binary
-        path (Path): path to binary file
-    """
     joblib.dump(value=data, filename=path)
     logger.info(f"binary file saved at: {path}")
 
@@ -131,6 +106,7 @@ def load_bin(path: Path) -> Any:
 
 
 
+
 @ensure_annotations
 def get_size(path: Path) -> str:
     """get size in KB
@@ -143,3 +119,27 @@ def get_size(path: Path) -> str:
     """
     size_in_kb = round(os.path.getsize(path)/1024)
     return f"~ {size_in_kb} KB"
+
+
+_mlflow_initialized = False
+
+@ensure_annotations
+def init_mlflow_tracking(mlflow_username: str = None, mlflow_password: str = None):
+    """
+    Initialize MLflow and DagsHub tracking once.
+    """
+    global _mlflow_initialized
+    if _mlflow_initialized:
+        return
+    
+    if mlflow_username:
+        os.environ["MLFLOW_TRACKING_USERNAME"] = mlflow_username
+    if mlflow_password:
+        os.environ["MLFLOW_TRACKING_PASSWORD"] = mlflow_password
+    
+    dagshub.init(repo_owner='JavithNaseem-J', repo_name='FraudGuard')
+    mlflow.set_tracking_uri('https://dagshub.com/JavithNaseem-J/FraudGuard.mlflow')
+    mlflow.set_experiment("Fraud-Detection")
+    
+    _mlflow_initialized = True
+    logger.info("MLflow and DagsHub tracking initialized.")

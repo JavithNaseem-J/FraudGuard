@@ -1,11 +1,15 @@
 cross_validation:  
-    cv_folds: 5
-    scoring: "f1"
-    n_jobs: -1
-    n_iter: 10
-
+  cv_folds: 5
+  scoring: "f1"
+  n_jobs: -1
+  n_iter: 10
 
 train_test_split:
   test_size: 0.2
   random_state: 42
 
+mlflow:
+  mlflow_username: ""
+  mlflow_password: ""
+  experiment_name: "Fraud-Detection"
+  tracking_uri: "https://dagshub.com/JavithNaseem-J/FraudGuard.mlflow"

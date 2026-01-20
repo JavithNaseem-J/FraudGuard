@@ -6,14 +6,12 @@ import pandas as pd
 import numpy as np
 import optuna
 from pathlib import Path
-import dagshub
 import matplotlib.pyplot as plt
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from xgboost import XGBClassifier
 from catboost import CatBoostClassifier
-from lightgbm import LGBMClassifier
 from FraudGuard import logger
-from FraudGuard.utils.helpers import save_json, save_bin
+from FraudGuard.utils.helpers import save_json, save_bin, init_mlflow_tracking
 from FraudGuard.entity.config_entity import ModelTrainerConfig
 
 
@@ -21,12 +19,12 @@ class Trainer:
     def __init__(self, config: ModelTrainerConfig):
         self.config = config
 
-        os.environ["MLFLOW_TRACKING_USERNAME"] = self.config.mlflow_username
-        os.environ["MLFLOW_TRACKING_PASSWORD"] = self.config.mlflow_password
+        # Initialize MLflow tracking (centralized, idempotent)
+        init_mlflow_tracking(
+            mlflow_username=self.config.mlflow_username,
+            mlflow_password=self.config.mlflow_password
+        )
 
-        dagshub.init(repo_owner="JavithNaseem-J", repo_name="FraudGuard")
-        mlflow.set_tracking_uri("https://dagshub.com/JavithNaseem-J/FraudGuard.mlflow")
-        mlflow.set_experiment("Fraud-Detection")
 
         self.models = {
             "XGBoost": {
@@ -50,16 +48,6 @@ class Trainer:
                     "allow_writing_files": False
                 },
                 "mlflow_module": mlflow.catboost,
-            },
-            "LightGBM": {
-                "class": LGBMClassifier,
-                "search_space": lambda trial: {
-                    "num_leaves": trial.suggest_int("num_leaves", 20, 150),
-                    "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3),
-                    "n_estimators": trial.suggest_int("n_estimators", 50, 300),
-                    "verbosity": -1
-                },
-                "mlflow_module": mlflow.lightgbm,
             },
         }
 
@@ -127,11 +115,29 @@ class Trainer:
             final_params["verbosity"] = 1
         elif best_overall["model_name"] == "CatBoost":
             final_params["verbose"] = 100
-        elif best_overall["model_name"] == "LightGBM":
-            final_params["verbosity"] = 1
+
 
         best_model = best_model_class(**final_params)
         best_model.fit(train_x, train_y)
+
+        # Find optimal threshold using validation (here, use test_data for simplicity)
+        # In real projects, use a separate validation set
+        test_x = test_data[:, :-1]
+        test_y = test_data[:, -1]
+        if hasattr(best_model, "predict_proba"):
+            proba = best_model.predict_proba(test_x)[:, 1]
+        else:
+            proba = best_model.predict(test_x)
+
+        from sklearn.metrics import precision_recall_curve, f1_score
+        precisions, recalls, thresholds = precision_recall_curve(test_y, proba)
+        f1s = [f1_score(test_y, proba >= t) for t in thresholds]
+        best_idx = int(np.argmax(f1s))
+        optimal_threshold = float(thresholds[best_idx]) if len(thresholds) > 0 else 0.5
+
+        # Save threshold as artifact
+        threshold_path = os.path.join(self.config.root_dir, "optimal_threshold.json")
+        save_json(path=Path(threshold_path), data={"optimal_threshold": optimal_threshold})
 
         # Log & register the final best model
         with mlflow.start_run(run_name=f"{best_overall['model_name']}_final"):
@@ -152,6 +158,8 @@ class Trainer:
             best_model_info_path = os.path.join(self.config.root_dir, "best_model_info.json")
             save_json(path=Path(best_model_info_path), data=best_overall)
             mlflow.log_artifact(best_model_info_path)
+            mlflow.log_artifact(threshold_path)
 
         logger.info(f"Best model overall in the Model Training: {best_overall}")
+        logger.info(f"Optimal threshold saved at {threshold_path}: {optimal_threshold}")
         return best_overall

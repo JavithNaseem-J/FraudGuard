@@ -13,6 +13,7 @@ from FraudGuard import logger
 from FraudGuard.entity.config_entity import DataTransformationConfig
 from FraudGuard.utils.helpers import create_directories, save_bin
 
+
 class Transform:
     def __init__(self, config: DataTransformationConfig):
         self.config = config
@@ -25,104 +26,102 @@ class Transform:
         self.random_state = config.random_state
 
     def preprocess_data(self, data):
-            data = data.copy()
+        """Preprocess data: drop columns, encode categoricals."""
+        data = data.copy()
 
-            data.drop(columns=self.columns_to_drop, inplace=True, errors='ignore')
+        # Drop unnecessary columns
+        data.drop(columns=self.columns_to_drop, inplace=True, errors='ignore')
 
-            for column in self.categorical_columns:
-                if column in data.columns:
-                    le = LabelEncoder()
-                    data[column] = le.fit_transform(data[column].astype(str))
-                    self.label_encoders[column] = le
+        # Encode categorical columns
+        for column in self.categorical_columns:
+            if column in data.columns:
+                le = LabelEncoder()
+                data[column] = le.fit_transform(data[column].astype(str))
+                self.label_encoders[column] = le
 
-            # Create directory and save label encoders using utils.common
-            create_directories([os.path.dirname(self.config.label_encoder)])
-            save_bin(data=self.label_encoders, path=Path(self.config.label_encoder))
+        # Save label encoders
+        create_directories([os.path.dirname(self.config.label_encoder)])
+        save_bin(data=self.label_encoders, path=Path(self.config.label_encoder))
 
-            return data
-
+        return data
 
     def train_test_splitting(self):
+        """Split data into train/test sets, then apply SMOTE-Tomek to train only (no leakage)."""
+        logger.info(f"Loading data from {self.config.data_path}")
+        data = pd.read_csv(self.config.data_path)
 
-            logger.info(f"Loading data from {self.config.data_path}")
-            data = pd.read_csv(self.config.data_path)
+        # Preprocess data
+        data = self.preprocess_data(data)
+        data = data.dropna()
 
-            data = self.preprocess_data(data)
-            data = data.dropna()
+        # Split features and target
+        X = data.drop(columns=[self.target_column])
+        y = data[self.target_column]
 
-            X = data.drop(columns=[self.target_column])
-            y = data[self.target_column]
+        # Train-test split FIRST (no leakage)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=self.test_size, random_state=self.random_state
+        )
 
-            smote = SMOTETomek(tomek=TomekLinks(sampling_strategy='majority'))
-            X_resampled, y_resampled = smote.fit_resample(X, y)
+        # Apply SMOTE-Tomek to train only
+        logger.info("Applying SMOTE-Tomek resampling to training set only...")
+        smote = SMOTETomek(tomek=TomekLinks(sampling_strategy='majority'), random_state=self.random_state)
+        X_train_resampled, y_train_resampled = smote.fit_resample(X_train, y_train)
 
-            X_resampled = pd.DataFrame(X_resampled, columns=X.columns)
-            resampled_data = X_resampled.copy()
-            resampled_data[self.target_column] = y_resampled
+        # Reconstruct dataframes
+        train = pd.DataFrame(X_train_resampled, columns=X.columns)
+        train[self.target_column] = y_train_resampled
+        test = pd.DataFrame(X_test, columns=X.columns)
+        test[self.target_column] = y_test
 
-            train, test = train_test_split(resampled_data, test_size=self.test_size, random_state=self.random_state)
+        # Save splits
+        split_dir = os.path.join(self.config.root_dir, "split")
+        create_directories([split_dir])
 
-            split_dir = os.path.join(self.config.root_dir, "split")
-            create_directories([split_dir])
+        train.to_csv(os.path.join(split_dir, "train.csv"), index=False)
+        test.to_csv(os.path.join(split_dir, "test.csv"), index=False)
 
-            train_path = os.path.join(split_dir, "train.csv")
-            test_path = os.path.join(split_dir, "test.csv")
+        logger.info(f"Training data shape: {train.shape}")
+        logger.info(f"Test data shape: {test.shape}")
 
-            train.to_csv(train_path, index=False)
-            test.to_csv(test_path, index=False)
-
-            logger.info("Split data into training and test sets")
-            logger.info(f"Training data shape: {train.shape}")
-            logger.info(f"Test data shape: {test.shape}")
-
-            return train, test
-
+        return train, test
 
     def preprocess_features(self, train, test):
-            
-            numerical_columns = self.numerical_columns
-            categorical_columns = self.categorical_columns.copy()
+        """Apply StandardScaler to numerical features."""
+        all_columns = [c for c in train.columns if c != self.target_column]
+        numeric_cols = train[all_columns].select_dtypes(include=[np.number]).columns.tolist()
 
-            if self.target_column in categorical_columns:
-                categorical_columns.remove(self.target_column)
+        logger.info(f"Scaling {len(numeric_cols)} numeric columns")
 
-            logger.info(f"Numerical columns: {list(numerical_columns)}")
-            logger.info(f"Categorical columns: {list(categorical_columns)}")
+        num_pipeline = Pipeline(steps=[("scaler", StandardScaler())])
 
-            num_pipeline = Pipeline(steps=[
-                ("scaler", StandardScaler())
-            ])
+        preprocessor = ColumnTransformer(
+            transformers=[("num", num_pipeline, numeric_cols)],
+            remainder="passthrough"
+        )
 
-            preprocessor = ColumnTransformer(
-                transformers=[
-                    ("num", num_pipeline, numerical_columns)
-                ],
-                remainder="passthrough"
-            )
+        train_x = train.drop(columns=[self.target_column])
+        test_x = test.drop(columns=[self.target_column])
+        train_y = train[self.target_column].values.reshape(-1, 1)
+        test_y = test[self.target_column].values.reshape(-1, 1)
 
-            train_x = train.drop(columns=[self.target_column])
-            test_x = test.drop(columns=[self.target_column])
-            train_y = train[self.target_column].values.reshape(-1, 1)
-            test_y = test[self.target_column].values.reshape(-1, 1)
+        train_processed = preprocessor.fit_transform(train_x)
+        test_processed = preprocessor.transform(test_x)
 
-            train_processed = preprocessor.fit_transform(train_x)
-            test_processed = preprocessor.transform(test_x)
+        train_combined = np.hstack((train_processed, train_y))
+        test_combined = np.hstack((test_processed, test_y))
 
-            train_combined = np.hstack((train_processed, train_y))
-            test_combined = np.hstack((test_processed, test_y))
+        # Save preprocessor
+        save_bin(data=preprocessor, path=Path(self.config.preprocessor_path))
 
-            # Save preprocessor using save_bin
-            save_bin(data=preprocessor, path=Path(self.config.preprocessor_path))
+        # Save processed data
+        process_dir = os.path.join(self.config.root_dir, "process")
+        create_directories([process_dir])
 
-            # Create directory for processed data
-            process_dir = os.path.join(self.config.root_dir, "process")
-            create_directories([process_dir])
+        np.save(os.path.join(process_dir, "train_processed.npy"), train_combined)
+        np.save(os.path.join(process_dir, "test_processed.npy"), test_combined)
 
-            train_processed_path = os.path.join(process_dir, "train_processed.npy")
-            test_processed_path = os.path.join(process_dir, "test_processed.npy")
+        logger.info(f"Preprocessed train shape: {train_combined.shape}")
+        logger.info(f"Preprocessed test shape: {test_combined.shape}")
 
-            np.save(train_processed_path, train_combined)
-            np.save(test_processed_path, test_combined)
-
-            logger.info("Preprocessed train and test data saved successfully.")
-            return train_processed, test_processed
+        return train_processed, test_processed
