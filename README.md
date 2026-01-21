@@ -267,11 +267,3 @@ cross_validation:
 This project is licensed under the [MIT License](LICENSE).
 
 ---
-
-<div align="center">
-
-**Built with ❤️ for Production ML**
-
-[⬆ Back to Top](#️-fraudguard)
-
-</div>
