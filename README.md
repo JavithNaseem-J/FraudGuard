@@ -22,31 +22,31 @@
 flowchart TB
     subgraph DATA["📥 DATA LAYER"]
         direction TB
-        S3[("☁️ AWS S3\nRaw Data")]
-        S3 --> ING["📂 Ingestion\nDownload & Store"]
-        ING --> VAL["✅ Validation\nSchema Check"]
-        VAL --> PRE["⚙️ Preprocessing\nTransform & Split"]
+        S3[("☁️ AWS S3 \nRaw Data")]
+        S3 --> ING["📂 Ingestion \nDownload & Store"]
+        ING --> VAL["✅ Validation \nSchema Check"]
+        VAL --> PRE["⚙️ Preprocessing \nTransform & Split"]
     end
     
     subgraph ML["🤖 ML LAYER"]
         direction TB
-        PRE --> SMT["⚖️ SMOTE-Tomek\nClass Balancing"]
-        SMT --> TRN["🎯 Training\nXGBoost & CatBoost"]
-        TRN --> HPO["🔧 Optuna HPO\nStratified K-Fold"]
-        HPO --> EVL["📊 Evaluation\nMetrics & SHAP"]
+        PRE --> SMT["⚖️ SMOTE-Tomek \nClass Balancing"]
+        SMT --> TRN["🎯 Training \nXGBoost & CatBoost"]
+        TRN --> HPO["🔧 Optuna HPO \nStratified K-Fold"]
+        HPO --> EVL["📊 Evaluation \nMetrics & SHAP"]
     end
     
     subgraph TRACK["📈 TRACKING LAYER"]
         direction TB
-        EVL --> MLF["📋 MLflow\nExperiment Tracking"]
-        MLF --> DH["🗄️ DagsHub\nModel Registry"]
+        EVL --> MLF["📋 MLflow \nExperiment Tracking"]
+        MLF --> DH["🗄️ DagsHub \nModel Registry"]
     end
     
     subgraph DEPLOY["🚀 DEPLOYMENT LAYER"]
         direction TB
-        DH --> API["⚡ FastAPI\nREST Service"]
-        API --> DCK["🐳 Docker\nContainer"]
-        DCK --> ECR["☁️ AWS ECR\nProduction"]
+        DH --> API["⚡ FastAPI \nREST Service"]
+        API --> DCK["🐳 Docker \nContainer"]
+        DCK --> ECR["☁️ AWS ECR \nProduction"]
     end
     
     DATA --> ML --> TRACK --> DEPLOY
@@ -63,11 +63,11 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    A["🗃️ <b>ingestion</b>\npython -m FraudGuard.components.ingestion"]
-    B["✅ <b>validation</b>\npython -m FraudGuard.components.validation"]
-    C["⚙️ <b>preprocess</b>\npython -m FraudGuard.components.preprocess"]
-    D["🎯 <b>training</b>\npython -m FraudGuard.components.training"]
-    E["📊 <b>evaluation</b>\npython -m FraudGuard.components.evaluation"]
+    A["🗃️ <b>ingestion</b>\n python -m FraudGuard.components.ingestion"]
+    B["✅ <b>validation</b>\n python -m FraudGuard.components.validation"]
+    C["⚙️ <b>preprocess</b>\n python -m FraudGuard.components.preprocess"]
+    D["🎯 <b>training</b>\n python -m FraudGuard.components.training"]
+    E["📊 <b>evaluation</b>\n python -m FraudGuard.components.evaluation"]
     
     A --> B --> C --> D --> E
     
