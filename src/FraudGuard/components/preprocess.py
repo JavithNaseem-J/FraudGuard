@@ -125,3 +125,14 @@ class Transform:
         logger.info(f"Preprocessed test shape: {test_combined.shape}")
 
         return train_processed, test_processed
+
+
+if __name__ == "__main__":
+    from FraudGuard.config.config import ConfigurationManager
+    
+    logger.info(">>>>>> Stage: Preprocess started <<<<<<")
+    config = ConfigurationManager()
+    transform = Transform(config=config.get_data_transformation_config())
+    train, test = transform.train_test_splitting()
+    transform.preprocess_features(train, test)
+    logger.info(">>>>>> Stage: Preprocess completed <<<<<<")

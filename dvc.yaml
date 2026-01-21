@@ -1,6 +1,6 @@
 stages:
   ingestion:
-    cmd: python main.py --stage ingestion
+    cmd: python -m FraudGuard.components.ingestion
     deps:
       - src/FraudGuard/config/config.py
       - src/FraudGuard/components/ingestion.py
@@ -11,7 +11,7 @@ stages:
       - artifacts/ingestion
 
   validation:
-    cmd: python main.py --stage validation
+    cmd: python -m FraudGuard.components.validation
     deps:
       - src/FraudGuard/config/config.py
       - src/FraudGuard/components/validation.py
@@ -23,7 +23,7 @@ stages:
       - artifacts/validation/status.json
 
   preprocess:
-    cmd: python main.py --stage preprocess
+    cmd: python -m FraudGuard.components.preprocess
     deps:
       - src/FraudGuard/config/config.py
       - src/FraudGuard/components/preprocess.py
@@ -43,7 +43,7 @@ stages:
       - artifacts/transform/preprocess/label_encoders.pkl
 
   training:
-    cmd: python main.py --stage training
+    cmd: python -m FraudGuard.components.training
     deps:
       - src/FraudGuard/config/config.py
       - src/FraudGuard/components/training.py
@@ -59,7 +59,7 @@ stages:
       - artifacts/trainer/best_model_info.json
 
   evaluation:
-    cmd: python main.py --stage evaluation
+    cmd: python -m FraudGuard.components.evaluation
     deps:
       - src/FraudGuard/config/config.py
       - src/FraudGuard/components/evaluation.py
@@ -77,10 +77,3 @@ stages:
       - artifacts/evaluation/roc.png
     metrics:
       - artifacts/evaluation/metrics.json
-
-  model_registry:
-    cmd: python main.py --stage model_registry
-    deps:
-      - src/FraudGuard/components/registry.py
-      - artifacts/evaluation/metrics.json
-      - artifacts/trainer/model.joblib

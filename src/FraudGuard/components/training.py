@@ -163,3 +163,13 @@ class Trainer:
         logger.info(f"Best model overall in the Model Training: {best_overall}")
         logger.info(f"Optimal threshold saved at {threshold_path}: {optimal_threshold}")
         return best_overall
+
+
+if __name__ == "__main__":
+    from FraudGuard.config.config import ConfigurationManager
+    
+    logger.info(">>>>>> Stage: Training started <<<<<<")
+    config = ConfigurationManager()
+    trainer = Trainer(config=config.get_model_training_config())
+    trainer.train()
+    logger.info(">>>>>> Stage: Training completed <<<<<<")

@@ -62,3 +62,13 @@ class Validation:
                 json.dump({"validation_status": is_valid}, f)
                 
             return is_valid
+
+
+if __name__ == "__main__":
+    from FraudGuard.config.config import ConfigurationManager
+    
+    logger.info(">>>>>> Stage: Validation started <<<<<<")
+    config = ConfigurationManager()
+    validation = Validation(config=config.get_data_validation_config())
+    validation.validation()
+    logger.info(">>>>>> Stage: Validation completed <<<<<<")

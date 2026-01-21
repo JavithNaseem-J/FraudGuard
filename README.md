@@ -1,75 +1,152 @@
 # 🛡️ FraudGuard
 
+<div align="center">
+
 **End-to-End Bank Transaction Fraud Detection System**
 
-A production-grade machine learning pipeline for detecting fraudulent bank transactions. Built with modern MLOps practices including experiment tracking, data versioning, and automated CI/CD deployment.
+[![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://python.org)
+[![MLflow](https://img.shields.io/badge/MLflow-Tracking-orange.svg)](https://mlflow.org)
+[![DVC](https://img.shields.io/badge/DVC-Pipeline-purple.svg)](https://dvc.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Production-green.svg)](https://fastapi.tiangolo.com)
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://docker.com)
+
+*A production-grade ML pipeline for detecting fraudulent bank transactions with modern MLOps practices*
+
+</div>
 
 ---
 
-## 📊 Architecture Overview
+## 🏗️ Architecture Overview
 
 ```mermaid
-flowchart LR
-    subgraph Data Pipeline
-        A[S3 Bucket] -->|Download| B[Data Ingestion]
-        B --> C[Data Validation]
-        C --> D[Data Transformation]
+flowchart TB
+    subgraph DATA["📥 DATA LAYER"]
+        direction TB
+        S3[("☁️ AWS S3\nRaw Data")]
+        S3 --> ING["📂 Ingestion\nDownload & Store"]
+        ING --> VAL["✅ Validation\nSchema Check"]
+        VAL --> PRE["⚙️ Preprocessing\nTransform & Split"]
     end
     
-    subgraph ML Pipeline
-        D -->|Train/Test Split| E[SMOTE-Tomek Resampling]
-        E --> F[Model Training]
-        F -->|XGBoost / CatBoost| G[Hyperparameter Optimization]
-        G --> H[Model Evaluation]
+    subgraph ML["🤖 ML LAYER"]
+        direction TB
+        PRE --> SMT["⚖️ SMOTE-Tomek\nClass Balancing"]
+        SMT --> TRN["🎯 Training\nXGBoost & CatBoost"]
+        TRN --> HPO["🔧 Optuna HPO\nStratified K-Fold"]
+        HPO --> EVL["📊 Evaluation\nMetrics & SHAP"]
     end
     
-    subgraph Deployment
-        H -->|Best Model| I[MLflow Registry]
-        I --> J[FastAPI Service]
-        J --> K[Docker Container]
-        K --> L[AWS ECR]
+    subgraph TRACK["📈 TRACKING LAYER"]
+        direction TB
+        EVL --> MLF["📋 MLflow\nExperiment Tracking"]
+        MLF --> DH["🗄️ DagsHub\nModel Registry"]
     end
+    
+    subgraph DEPLOY["🚀 DEPLOYMENT LAYER"]
+        direction TB
+        DH --> API["⚡ FastAPI\nREST Service"]
+        API --> DCK["🐳 Docker\nContainer"]
+        DCK --> ECR["☁️ AWS ECR\nProduction"]
+    end
+    
+    DATA --> ML --> TRACK --> DEPLOY
+    
+    style DATA fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    style ML fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style TRACK fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+    style DEPLOY fill:#fce4ec,stroke:#c2185b,stroke-width:2px
 ```
 
 ---
 
-## 🔄 ML Pipeline Flow
+## 🔄 DVC Pipeline Stages
 
 ```mermaid
-flowchart TD
-    A[Raw Transaction Data] --> B[Drop Unnecessary Columns]
-    B --> C[Label Encode Categoricals]
-    C --> D[Train-Test Split]
-    D --> E[Apply SMOTE-Tomek to Train Only]
-    E --> F[StandardScaler on Numerics]
-    F --> G[Train XGBoost & CatBoost]
-    G --> H[Optuna HPO with Stratified K-Fold]
-    H --> I[Select Best Model by F1 Score]
-    I --> J[Calculate Optimal Threshold]
-    J --> K[Log to MLflow + DagsHub]
-    K --> L[Save Model Artifacts]
+flowchart TB
+    A["🗃️ <b>ingestion</b>\npython -m FraudGuard.components.ingestion"]
+    B["✅ <b>validation</b>\npython -m FraudGuard.components.validation"]
+    C["⚙️ <b>preprocess</b>\npython -m FraudGuard.components.preprocess"]
+    D["🎯 <b>training</b>\npython -m FraudGuard.components.training"]
+    E["📊 <b>evaluation</b>\npython -m FraudGuard.components.evaluation"]
     
-    style E fill:#ff6b6b,color:#fff
-    style J fill:#4ecdc4,color:#fff
+    A --> B --> C --> D --> E
+    
+    style A fill:#bbdefb,stroke:#1976d2,stroke-width:2px
+    style B fill:#c8e6c9,stroke:#388e3c,stroke-width:2px
+    style C fill:#fff9c4,stroke:#fbc02d,stroke-width:2px
+    style D fill:#ffccbc,stroke:#e64a19,stroke-width:2px
+    style E fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px
 ```
 
-> **Note:** SMOTE-Tomek is applied **only to training data** to prevent data leakage. The optimal threshold is calculated using the Precision-Recall curve and saved as an artifact.
+> 💡 **Pro Tip:** Run `dvc repro` to execute the pipeline. DVC caches completed stages, so if training fails, just fix the error and run `dvc repro` again - it resumes from where it stopped!
+
+---
+
+## ⚡ Quickstart
+
+### Prerequisites
+- Python 3.9+
+- AWS credentials (for S3 data access)
+- Git & DVC installed
+
+### 1️⃣ Clone & Setup
+```bash
+git clone https://github.com/JavithNaseem-J/FraudGuard.git
+cd FraudGuard
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.lock
+```
+
+### 2️⃣ Configure Environment
+```bash
+# Windows PowerShell
+$env:AWS_PROFILE = "your-aws-profile"
+$env:AWS_REGION = "us-east-1"
+$env:MLFLOW_TRACKING_USERNAME = "your-dagshub-username"
+$env:MLFLOW_TRACKING_PASSWORD = "your-dagshub-token"
+
+# Linux/Mac
+export AWS_PROFILE=your-aws-profile
+export AWS_REGION=us-east-1
+export MLFLOW_TRACKING_USERNAME=your-dagshub-username
+export MLFLOW_TRACKING_PASSWORD=your-dagshub-token
+```
+
+### 3️⃣ Run Pipeline
+```bash
+# Run full pipeline with caching
+dvc repro
+
+# Or run individual stages
+python -m FraudGuard.components.ingestion
+python -m FraudGuard.components.training
+```
+
+### 4️⃣ Start Web App
+```bash
+uvicorn app:app --reload --port 8080
+# Navigate to http://localhost:8080
+```
 
 ---
 
 ## 🚀 Key Features
 
 | Feature | Description |
-|---------|-------------|
-| **Full ML Lifecycle** | Ingestion → Validation → Transformation → Training → Evaluation → Inference |
-| **Experiment Tracking** | MLflow + DagsHub for logging metrics, parameters, and artifacts |
-| **Data Versioning** | DVC for versioning datasets and pipeline outputs |
-| **Class Imbalance Handling** | SMOTE-Tomek hybrid resampling for fraud detection |
-| **Hyperparameter Optimization** | Optuna with Stratified K-Fold cross-validation |
-| **Model Interpretability** | SHAP feature importance plots |
-| **Dynamic Thresholding** | Optimal threshold calculated during training, not hardcoded |
-| **Production API** | FastAPI with form handling and HTML templates |
-| **CI/CD** | GitHub Actions → Docker → AWS ECR deployment |
+|:--------|:------------|
+| 🔄 **DVC Pipeline** | Cached, reproducible ML pipeline with `dvc repro` |
+| 📊 **Experiment Tracking** | MLflow + DagsHub for metrics, parameters, artifacts |
+| ⚖️ **Class Imbalance** | SMOTE-Tomek hybrid resampling (train only, no leakage) |
+| 🔧 **HPO** | Optuna with Stratified K-Fold cross-validation |
+| 🧠 **Interpretability** | SHAP feature importance plots |
+| 🎯 **Dynamic Threshold** | Optimal threshold from Precision-Recall curve |
+| ⚡ **Production API** | FastAPI with HTML templates |
+| 🐳 **Docker Ready** | One-command containerized deployment |
 
 ---
 
@@ -77,95 +154,52 @@ flowchart TD
 
 ```
 FraudGuard/
-├── app.py                      # FastAPI web application
-├── main.py                     # CLI pipeline runner
-├── Dockerfile                  # Container configuration
-├── dvc.yaml                    # DVC pipeline definition
-├── config_file/
-│   ├── config.yaml             # Paths and artifact locations
-│   ├── params.yaml             # Hyperparameters and settings
-│   └── schema.yaml             # Data schema definition
-├── src/FraudGuard/
-│   ├── components/
-│   │   ├── ingestion.py        # S3 data download
-│   │   ├── validation.py       # Schema validation
-│   │   ├── preprocess.py       # Feature engineering + SMOTE
-│   │   ├── training.py         # Model training with HPO
-│   │   └── evaluation.py       # Metrics + SHAP plots
-│   ├── pipeline/
-│   │   ├── feature_pipeline.py # Data processing pipeline
-│   │   ├── model_pipeline.py   # Training + evaluation pipeline
-│   │   └── inference_pipeline.py # Production inference
-│   ├── entity/
-│   │   └── config_entity.py    # Pydantic config models
-│   └── utils/
-│       ├── helpers.py          # Utility functions
-│       └── logging.py          # Custom logger
-├── templates/                  # HTML templates for web UI
-└── tests/
-    └── test_core.py            # Core unit tests
+├── 📄 app.py                      # FastAPI web application
+├── 📄 dvc.yaml                    # DVC pipeline definition
+├── 🐳 Dockerfile                  # Container configuration
+│
+├── 📁 config_file/
+│   ├── config.yaml                # Paths and artifact locations
+│   ├── params.yaml                # Hyperparameters
+│   └── schema.yaml                # Data schema
+│
+├── 📁 src/FraudGuard/
+│   ├── 📁 components/             # 🎯 Pipeline stages (DVC entry points)
+│   │   ├── ingestion.py           # S3 data download
+│   │   ├── validation.py          # Schema validation
+│   │   ├── preprocess.py          # Feature engineering + SMOTE
+│   │   ├── training.py            # Model training with HPO
+│   │   └── evaluation.py          # Metrics + SHAP plots
+│   │
+│   ├── 📁 pipeline/
+│   │   ├── feature_pipeline.py    # Data processing pipeline
+│   │   ├── model_pipeline.py      # Training + evaluation
+│   │   └── inference_pipeline.py  # Production inference
+│   │
+│   ├── 📁 entity/
+│   │   └── config_entity.py       # Pydantic config models
+│   │
+│   └── 📁 utils/
+│       ├── helpers.py             # Utility functions
+│       └── logging.py             # Custom logger
+│
+├── 📁 templates/                  # HTML templates for web UI
+├── 📁 artifacts/                  # Generated outputs (DVC tracked)
+└── 📁 tests/
+    └── test_core.py               # Unit tests
 ```
-
----
-
-## 🛠️ Installation
-
-### 1. Clone the Repository
-```bash
-git clone https://github.com/JavithNaseem-J/FraudGuard.git
-cd FraudGuard
-```
-
-### 2. Create Virtual Environment
-```bash
-python -m venv venv
-source venv/bin/activate  
-```
-
-### 3. Install Dependencies
-```bash
-pip install -r requirements.lock
-```
-
-### 4. Set Environment Variables
-```bash
-export AWS_PROFILE=your-aws-profile        
-export AWS_REGION=us-east-1
-export MLFLOW_TRACKING_USERNAME=your-dagshub-username
-export MLFLOW_TRACKING_PASSWORD=your-dagshub-token
-```
-
----
-
-## ▶️ Usage
-
-### Run Full Pipeline
-```bash
-python main.py
-```
-
-### Run Individual Stages
-```bash
-python main.py --stage feature_pipeline   # Data processing only
-python main.py --stage model_pipeline     # Training + evaluation only
-```
-
-### Start Web Application
-```bash
-python app.py
-# Or with uvicorn:
-uvicorn app:app --reload --port 8080
-```
-
-Then navigate to `http://localhost:8080` to access the prediction interface.
 
 ---
 
 ## 🧪 Testing
 
 ```bash
-# Set Python path and run tests
-$env:PYTHONPATH="src"; pytest tests/test_core.py -v
+# Windows PowerShell
+$env:PYTHONPATH = "src"
+pytest tests/test_core.py -v
+
+# Linux/Mac
+PYTHONPATH=src pytest tests/test_core.py -v
 ```
 
 ---
@@ -173,29 +207,32 @@ $env:PYTHONPATH="src"; pytest tests/test_core.py -v
 ## 🐳 Docker Deployment
 
 ```bash
-# Build image
+# Build
 docker build -t fraudguard .
 
-# Run container
-docker run -p 8080:8080 fraudguard
+# Run
+docker run -p 8080:8080 \
+  -e AWS_PROFILE=your-profile \
+  -e MLFLOW_TRACKING_USERNAME=your-username \
+  -e MLFLOW_TRACKING_PASSWORD=your-token \
+  fraudguard
 ```
 
 ---
 
 ## 📈 Model Performance
 
-The model is evaluated using multiple metrics suitable for imbalanced fraud detection:
-
 | Metric | Description |
-|--------|-------------|
-| **F1 Score (Weighted)** | Primary optimization target |
-| **Precision/Recall** | Trade-off managed via optimal threshold |
-| **AUC-ROC** | Overall discrimination ability |
-| **Confusion Matrix** | Visual analysis of predictions |
+|:-------|:------------|
+| 🎯 **F1 Score (Weighted)** | Primary optimization target |
+| ⚖️ **Precision / Recall** | Managed via optimal threshold |
+| 📈 **AUC-ROC** | Overall discrimination ability |
+| 🔲 **Confusion Matrix** | Visual prediction analysis |
+| 🧠 **SHAP Plots** | Feature importance & interpretability |
 
 ---
 
-## 🔧 Configuration
+## ⚙️ Configuration
 
 ### `config_file/params.yaml`
 ```yaml
@@ -206,10 +243,22 @@ train_test_split:
 cross_validation:
   cv_folds: 5
   scoring: f1
-  n_iter: 20
-  n_jobs: -1
+  n_iter: 20      # Optuna trials
+  n_jobs: -1      # Parallel jobs
 ```
 
+---
+
+## 🔧 DVC Commands Reference
+
+| Command | Description |
+|:--------|:------------|
+| `dvc repro` | Run full pipeline (cached) |
+| `dvc repro training` | Run up to training stage |
+| `dvc repro -s training` | Run only training stage |
+| `dvc dag` | View pipeline DAG |
+| `dvc metrics show` | Show evaluation metrics |
+| `dvc plots show` | Generate metric plots |
 
 ---
 
@@ -219,3 +268,10 @@ This project is licensed under the [MIT License](LICENSE).
 
 ---
 
+<div align="center">
+
+**Built with ❤️ for Production ML**
+
+[⬆ Back to Top](#️-fraudguard)
+
+</div>

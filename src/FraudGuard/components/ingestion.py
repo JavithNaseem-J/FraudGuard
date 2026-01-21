@@ -25,3 +25,13 @@ class Ingestion:
                 raise Exception(f"Failed to download {self.config.data_path} from S3")
         else:
             logger.info(f"File already exists: {local_csv_path} ({get_size(local_csv_path)})")
+
+
+if __name__ == "__main__":
+    from FraudGuard.config.config import ConfigurationManager
+    
+    logger.info(">>>>>> Stage: Ingestion started <<<<<<")
+    config = ConfigurationManager()
+    ingestion = Ingestion(config=config.get_data_ingestion_config())
+    ingestion.download_file()
+    logger.info(">>>>>> Stage: Ingestion completed <<<<<<")

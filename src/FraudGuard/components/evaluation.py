@@ -149,3 +149,13 @@ class Evaluation:
             
         except Exception as e:
             logger.warning(f"Could not generate SHAP plots: {str(e)}")
+
+
+if __name__ == "__main__":
+    from FraudGuard.config.config import ConfigurationManager
+    
+    logger.info(">>>>>> Stage: Evaluation started <<<<<<")
+    config = ConfigurationManager()
+    evaluation = Evaluation(config=config.get_model_evaluation_config())
+    evaluation.evaluation()
+    logger.info(">>>>>> Stage: Evaluation completed <<<<<<")
