@@ -139,6 +139,19 @@ class Trainer:
         threshold_path = os.path.join(self.config.root_dir, "optimal_threshold.json")
         save_json(path=Path(threshold_path), data={"optimal_threshold": optimal_threshold})
 
+        # Save model version metadata for tracking
+        from datetime import datetime
+        model_version_data = {
+            "version": "1.0.0",
+            "trained_at": datetime.utcnow().isoformat(),
+            "model_name": best_overall["model_name"],
+            "cv_score": float(best_overall["score"]),
+            "cv_std": float(best_overall["std"]),
+            "optimal_threshold": float(optimal_threshold)
+        }
+        model_version_path = os.path.join(self.config.root_dir, "model_version.json")
+        save_json(path=Path(model_version_path), data=model_version_data)
+
         # Log & register the final best model
         with mlflow.start_run(run_name=f"{best_overall['model_name']}_final"):
             mlflow.log_params(final_params)
