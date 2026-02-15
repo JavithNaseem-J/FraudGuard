@@ -399,6 +399,7 @@ Silent failures in production are disasters.
 
 This project is licensed under the [MIT License](LICENSE).
 
+<<<<<<< HEAD
 ---
 
 ## 🤝 Contributing
@@ -421,3 +422,6 @@ Contributions welcome! Please:
 **Built with ❤️ for Production ML**
 
 [⬆ Back to Top](#️-fraudguard)
+=======
+</div>
+>>>>>>> a97b657933b38558b1dc95f2a9219967bcf5b036
