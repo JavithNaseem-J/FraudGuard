@@ -45,16 +45,6 @@ ML-powered fraud detection that:
 | **AUC-ROC** | **0.95** | Excellent discrimination ability |
 | **Inference Time** | **<50ms** | Fast enough for real-time payment processing |
 
-### vs. Industry Baselines
-
-| System | F1 Score | Precision | Recall | Latency | Notes |
-|--------|----------|-----------|--------|---------|-------|
-| **FraudGuard (Ours)** | **91.2%** | **94.1%** | **88.7%** | **47ms** | This project |
-| Rule-Based System | ~72% | ~69% | ~76% | 5ms | Fast but inaccurate |
-| Random Forest Baseline | ~83% | ~81% | ~85% | 80ms | Lower precision |
-| Commercial Solutions | ~87% | ~90% | ~85% | 120ms | Expensive ($2K/1M txns) |
-
-**Bottom Line:** FraudGuard matches or exceeds commercial solutions at <10% of the cost.
 
 ---
 
