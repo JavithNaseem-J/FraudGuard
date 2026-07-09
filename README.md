@@ -26,15 +26,6 @@ ML-powered fraud detection that:
 - ✅ **Real-Time Processing:** <50ms inference time
 - ✅ **Production-Ready:** Input validation, rate limiting, health checks, model versioning
 
-### ROI Estimate (Mid-Sized Bank Processing 1M Transactions/Month)
-| Metric | Impact | Annual Value |
-|--------|--------|--------------|
-| **Prevented Fraud** | Catch additional 12% of fraud | ~$2.4M |
-| **Reduced False Positives** | 40% fewer blocked legitimate transactions | ~$800K |
-| **Operating Cost** | Cloud infrastructure + maintenance | -$50K |
-| **Net Benefit** | | **$3.15M/year** |
-
----
 
 ## 📊 Model Performance (Real Results)
 
