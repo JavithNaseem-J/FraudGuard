@@ -41,7 +41,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.lock
           python -m pip install -e .
-          python -m pip install black flake8 mypy
+          python -m pip install black==24.10.0 flake8==7.3.0 mypy==1.20.2
 
       - name: Format check
         run: black --check app.py src tests scripts
