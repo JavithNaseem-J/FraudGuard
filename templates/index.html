@@ -273,6 +273,40 @@
             align-items: center;
         }
 
+        .queue-tools {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--line);
+            background: #fbfcfe;
+        }
+
+        .segmented {
+            display: inline-flex;
+            padding: 3px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: #ffffff;
+        }
+
+        .segmented button {
+            min-height: 30px;
+            padding: 6px 10px;
+            border-radius: 9px;
+            color: var(--muted);
+            background: transparent;
+            font-size: 12px;
+            font-weight: 850;
+        }
+
+        .segmented button.active {
+            color: #ffffff;
+            background: #111827;
+        }
+
         .btn {
             display: inline-flex;
             align-items: center;
@@ -389,6 +423,10 @@
         }
 
         tr:hover td { background: #fbfcfe; }
+        tr.selected td {
+            background: #eef4ff;
+            box-shadow: inset 3px 0 0 #175cd3;
+        }
 
         .risk-badge {
             display: inline-flex;
@@ -473,6 +511,15 @@
             border: 1px solid var(--line);
             border-radius: 10px;
             background: #ffffff;
+            font-size: 12px;
+        }
+
+        .action-note {
+            padding: 10px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            color: #344054;
+            background: #f8fafc;
             font-size: 12px;
         }
 
@@ -585,6 +632,14 @@
                                 <button id="clearResultsButton" class="btn btn-secondary" type="button">Clear queue</button>
                             </div>
                         </div>
+                        <div class="queue-tools">
+                            <div class="segmented" aria-label="Queue filter">
+                                <button class="active" type="button" data-filter="all">All</button>
+                                <button type="button" data-filter="review">Needs review</button>
+                                <button type="button" data-filter="clear">Cleared</button>
+                            </div>
+                            <span id="queueFilterSummary" class="mono">0 visible</span>
+                        </div>
                         <div id="emptyState" class="empty">
                             <div>
                                 <strong>No cases in review</strong>
@@ -667,9 +722,10 @@
                             <div class="reason-list" id="reasonList">
                                 <div class="reason"><span>No case selected</span><strong>--</strong></div>
                             </div>
+                            <div id="caseActionNote" class="action-note">No analyst action recorded.</div>
                             <div class="toolbar">
-                                <button class="btn btn-secondary" type="button">Mark reviewed</button>
-                                <button class="btn btn-danger" type="button">Escalate</button>
+                                <button id="markReviewedButton" class="btn btn-secondary" type="button">Mark reviewed</button>
+                                <button id="escalateButton" class="btn btn-danger" type="button">Escalate</button>
                             </div>
                         </div>
                     </section>
@@ -711,6 +767,9 @@
             lastResponse: null,
             featureNames: buildFallbackFeatureNames(),
             selectedResult: null,
+            results: [],
+            queueFilter: "all",
+            caseActions: {},
         };
 
         const nodes = {
@@ -738,6 +797,8 @@
             reviewRate: document.getElementById("reviewRate"),
             navQueueCount: document.getElementById("navQueueCount"),
             navRelease: document.getElementById("navRelease"),
+            queueFilterSummary: document.getElementById("queueFilterSummary"),
+            filterButtons: document.querySelectorAll("[data-filter]"),
             schemaHint: document.getElementById("schemaHint"),
             payloadCount: document.getElementById("payloadCount"),
             resultSummary: document.getElementById("resultSummary"),
@@ -751,6 +812,9 @@
             caseThreshold: document.getElementById("caseThreshold"),
             caseModel: document.getElementById("caseModel"),
             reasonList: document.getElementById("reasonList"),
+            caseActionNote: document.getElementById("caseActionNote"),
+            markReviewedButton: document.getElementById("markReviewedButton"),
+            escalateButton: document.getElementById("escalateButton"),
             releaseId: document.getElementById("releaseId"),
             modelName: document.getElementById("modelName"),
             schemaRiskCount: document.getElementById("schemaRiskCount"),
@@ -771,6 +835,11 @@
             nodes.downloadButton.addEventListener("click", downloadLastResponse);
             nodes.inputMode.addEventListener("change", updatePlaceholder);
             nodes.payloadInput.addEventListener("input", updatePayloadCount);
+            nodes.filterButtons.forEach((button) => {
+                button.addEventListener("click", () => setQueueFilter(button.dataset.filter));
+            });
+            nodes.markReviewedButton.addEventListener("click", () => applyCaseAction("Reviewed"));
+            nodes.escalateButton.addEventListener("click", () => applyCaseAction("Escalated"));
             await loadSchema();
             loadSample();
         }
@@ -932,10 +1001,12 @@
         function renderResults(payload) {
             const results = payload.results || [];
             const risky = results.filter((row) => row.fraud_status === "Yes").length;
+            state.results = results;
+            state.caseActions = {};
+            state.selectedResult = results[0] || null;
             nodes.emptyState.hidden = true;
             nodes.tableWrap.hidden = false;
             nodes.downloadButton.disabled = false;
-            nodes.resultsBody.innerHTML = "";
             nodes.rowsLoaded.textContent = String(results.length);
             nodes.reviewCount.textContent = String(risky);
             nodes.navQueueCount.textContent = String(risky || results.length);
@@ -943,9 +1014,28 @@
             nodes.resultSummary.textContent = `${results.length} transactions scored. ${risky} routed for manual review.`;
             nodes.rawOutput.textContent = JSON.stringify(payload, null, 2);
 
+            renderQueue(payload);
+            if (results[0]) renderCaseDetail(results[0], payload);
+        }
+
+        function renderQueue(payload) {
+            const results = filteredResults();
+            nodes.resultsBody.innerHTML = "";
+            nodes.queueFilterSummary.textContent = `${results.length} visible`;
+            if (state.results.length && results.length === 0) {
+                nodes.emptyState.hidden = false;
+                nodes.tableWrap.hidden = true;
+                return;
+            }
+            nodes.emptyState.hidden = state.results.length > 0;
+            nodes.tableWrap.hidden = state.results.length === 0;
+
             for (const result of results) {
                 const tier = riskTier(result.fraud_score, result.fraud_status);
+                const selected = isSelected(result) ? " selected" : "";
+                const action = state.caseActions[caseKey(result)] || (result.fraud_status === "Yes" ? "Manual review" : "Auto clear");
                 const tr = document.createElement("tr");
+                tr.className = selected;
                 tr.innerHTML = `
                     <td class="mono">TX-${String(result.row_index).padStart(4, "0")}</td>
                     <td><span class="risk-badge ${tier.className}">${tier.label}</span></td>
@@ -956,18 +1046,18 @@
                         </div>
                     </td>
                     <td class="mono">${formatScore(result.threshold_used)}</td>
-                    <td>${result.fraud_status === "Yes" ? "Manual review" : "Auto clear"}</td>
+                    <td>${escapeHtml(action)}</td>
                     <td class="mono">${escapeHtml(result.prediction_id || "unknown")}</td>
                 `;
                 tr.addEventListener("click", () => renderCaseDetail(result, payload));
                 nodes.resultsBody.appendChild(tr);
             }
-            if (results[0]) renderCaseDetail(results[0], payload);
         }
 
         function renderCaseDetail(result, payload) {
             state.selectedResult = result;
             const tier = riskTier(result.fraud_score, result.fraud_status);
+            const action = state.caseActions[caseKey(result)] || "No analyst action recorded.";
             nodes.caseSubtitle.textContent = `TX-${String(result.row_index).padStart(4, "0")} selected`;
             nodes.caseStatus.textContent = tier.label;
             nodes.caseScore.textContent = formatPercent(result.fraud_score);
@@ -985,12 +1075,46 @@
                 item.innerHTML = `<span>${escapeHtml(name)}</span><strong>${escapeHtml(value)}</strong>`;
                 nodes.reasonList.appendChild(item);
             }
+            nodes.caseActionNote.textContent = action;
+            renderQueue(payload);
         }
 
         function riskTier(score, status) {
             if (status === "Yes" && score >= 0.7) return {label: "High risk", className: "risk-high"};
             if (status === "Yes") return {label: "Review", className: "risk-review"};
             return {label: "Clear", className: "risk-clear"};
+        }
+
+        function setQueueFilter(filter) {
+            state.queueFilter = filter || "all";
+            nodes.filterButtons.forEach((button) => {
+                button.classList.toggle("active", button.dataset.filter === state.queueFilter);
+            });
+            if (state.lastResponse) renderQueue(state.lastResponse);
+        }
+
+        function filteredResults() {
+            if (state.queueFilter === "review") {
+                return state.results.filter((result) => result.fraud_status === "Yes");
+            }
+            if (state.queueFilter === "clear") {
+                return state.results.filter((result) => result.fraud_status !== "Yes");
+            }
+            return state.results;
+        }
+
+        function applyCaseAction(action) {
+            if (!state.selectedResult || !state.lastResponse) return;
+            state.caseActions[caseKey(state.selectedResult)] = action;
+            renderCaseDetail(state.selectedResult, state.lastResponse);
+        }
+
+        function caseKey(result) {
+            return result.prediction_id || `row-${result.row_index}`;
+        }
+
+        function isSelected(result) {
+            return state.selectedResult && caseKey(state.selectedResult) === caseKey(result);
         }
 
         function loadSample() {
@@ -1047,6 +1171,8 @@
         function clearResults() {
             state.lastResponse = null;
             state.selectedResult = null;
+            state.results = [];
+            state.caseActions = {};
             nodes.emptyState.hidden = false;
             nodes.tableWrap.hidden = true;
             nodes.downloadButton.disabled = true;
@@ -1063,6 +1189,8 @@
             nodes.caseThreshold.textContent = "--";
             nodes.caseModel.textContent = "--";
             nodes.reasonList.innerHTML = '<div class="reason"><span>No case selected</span><strong>--</strong></div>';
+            nodes.caseActionNote.textContent = "No analyst action recorded.";
+            nodes.queueFilterSummary.textContent = "0 visible";
         }
 
         function updatePayloadCount() {
