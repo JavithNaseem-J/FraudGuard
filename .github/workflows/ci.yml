@@ -83,9 +83,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.lock
           python -m pip install -e .
+          python -m pip install pytest==8.4.2
 
       - name: Unit tests
-        run: pytest -q -p no:cacheprovider
+        run: python -m pytest -q -p no:cacheprovider
 
   backend-integration-tests:
     name: Backend integration and deploy preflight
@@ -107,10 +108,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.lock
           python -m pip install -e .
+          python -m pip install pytest==8.4.2
 
       - name: API integration contract tests
         run: |
-          pytest -q -p no:cacheprovider \
+          python -m pytest -q -p no:cacheprovider \
             tests/test_core.py::test_transaction_candidate_endpoint_is_feature_flagged_and_batch_safe \
             tests/test_core.py::test_transaction_mode_readiness_does_not_require_baseline_artifacts \
             tests/test_core.py::test_transaction_candidate_endpoint_enforces_batch_row_limit \
@@ -139,6 +141,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.lock
           python -m pip install -e .
+          python -m pip install pytest==8.4.2
           if test -f package-lock.json; then
             npm ci
           else
@@ -162,7 +165,7 @@ jobs:
           PY
 
       - name: Frontend tests
-        run: pytest -q -p no:cacheprovider tests/test_core.py::test_home_page_targets_transaction_batch_console
+        run: python -m pytest -q -p no:cacheprovider tests/test_core.py::test_home_page_targets_transaction_batch_console
 
       - name: Frontend production build
         run: |
@@ -172,7 +175,7 @@ jobs:
       - name: Browser smoke tests
         run: |
           if test -d tests/browser; then
-            pytest -q tests/browser
+            python -m pytest -q tests/browser
           else
             echo "No browser smoke suite is present; container smoke verifies served HTML."
           fi
