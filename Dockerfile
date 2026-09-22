@@ -1,10 +1,15 @@
 FROM python:3.11-slim
 
+ARG BUILD_COMMIT_SHA=unknown
+ARG BUILD_TIME=unknown
+
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app/src \
-    ARTIFACT_CACHE_ROOT=/app/runtime/model-releases
+    ARTIFACT_CACHE_ROOT=/app/runtime/model-releases \
+    BUILD_COMMIT_SHA=${BUILD_COMMIT_SHA} \
+    BUILD_TIME=${BUILD_TIME}
 
 WORKDIR /app
 

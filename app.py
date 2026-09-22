@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
 import time
-from secrets import compare_digest
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
+from secrets import compare_digest
 from typing import Any
 from uuid import uuid4
 
@@ -27,6 +29,7 @@ from FraudGuard.pipeline.transaction_candidate_pipeline import (
 
 
 settings = load_settings()
+STARTUP_BUILD_TIME = datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _safe_error_message(error: Exception) -> str:
@@ -275,6 +278,21 @@ async def liveness():
     return {"status": "alive", "service": "FraudGuard API", "env": settings.app_env}
 
 
+@app.get("/version")
+async def version():
+    return {
+        "commit_sha": (
+            os.getenv("RENDER_GIT_COMMIT")
+            or os.getenv("APP_COMMIT_SHA")
+            or os.getenv("BUILD_COMMIT_SHA")
+            or "unknown"
+        ),
+        "build_time": (
+            os.getenv("APP_BUILD_TIME") or os.getenv("BUILD_TIME") or STARTUP_BUILD_TIME
+        ),
+    }
+
+
 @app.get("/ready")
 async def readiness(request: Request):
     predictor = getattr(request.app.state, "predictor", None)
@@ -349,6 +367,39 @@ async def health_check(request: Request):
     return await readiness(request)
 
 
+@app.get("/schema/transactions")
+async def transaction_schema(request: Request):
+    app_settings = getattr(request.app.state, "settings", settings)
+    if not app_settings.transaction_candidate_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="Transaction candidate serving is disabled",
+        )
+
+    candidate = getattr(request.app.state, "transaction_candidate", None)
+    if candidate is None:
+        readiness_error = getattr(request.app.state, "readiness_error", None)
+        raise HTTPException(
+            status_code=503,
+            detail=readiness_error or "Transaction candidate model is not ready",
+        )
+
+    candidate_metadata = candidate.readiness_metadata()
+    return {
+        "model_mode": app_settings.model_mode,
+        "model_version": candidate.model_version,
+        "model_name": candidate.model_name,
+        "threshold": candidate.threshold,
+        "score_is_calibrated": candidate.score_is_calibrated,
+        "max_batch_rows": app_settings.max_batch_rows,
+        "feature_count": len(candidate.feature_names),
+        "feature_names": candidate.feature_names,
+        "numeric_features": candidate.metadata.get("numeric_features", []),
+        "categorical_features": candidate.metadata.get("categorical_features", []),
+        "schema_risks": candidate_metadata.get("schema_risks", []),
+    }
+
+
 @app.get("/api/placeholder/{width}/{height}")
 async def placeholder_image(width: int, height: int):
     return JSONResponse(content={"width": width, "height": height})
@@ -356,7 +407,7 @@ async def placeholder_image(width: int, height: int):
 
 @app.get("/")
 async def home_page(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html")
 
 
 @app.post("/predict")
@@ -402,7 +453,8 @@ async def predict(request: Request, transaction: TransactionInput):
         persisted = request.app.state.persistence.persist_prediction(record)
 
         logger.info(
-            "prediction_id=%s request_id=%s model_mode=baseline model_version=%s decision=%s score=%.4f threshold=%.4f latency_ms=%.2f persisted=%s",
+            "prediction_id=%s request_id=%s model_mode=baseline model_version=%s "
+            "decision=%s score=%.4f threshold=%.4f latency_ms=%.2f persisted=%s",
             prediction_id,
             request_id,
             result["model_version"],
@@ -505,7 +557,8 @@ async def predict_transaction_batch(request: Request, payload: TransactionBatchI
             response_results.append({"prediction_id": prediction_id, **result})
 
         logger.info(
-            "request_id=%s model_mode=transaction_candidate rows=%s model_version=%s latency_ms=%.2f persisted=%s status=success",
+            "request_id=%s model_mode=transaction_candidate rows=%s "
+            "model_version=%s latency_ms=%.2f persisted=%s status=success",
             request_id,
             len(payload.rows),
             batch_result["model_version"],
@@ -574,9 +627,9 @@ async def show_results(
         return RedirectResponse(url="/")
 
     return templates.TemplateResponse(
+        request,
         "result.html",
         {
-            "request": request,
             "prediction_id": prediction_id or "unknown",
             "fraud_status": fraud_status,
             "fraud_probability": float(fraud_probability),

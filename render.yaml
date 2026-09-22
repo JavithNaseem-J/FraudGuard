@@ -3,7 +3,7 @@ services:
     name: fraudguard-api
     runtime: docker
     plan: free
-    autoDeploy: true
+    autoDeploy: false
     dockerfilePath: ./Dockerfile
     healthCheckPath: /live
     envVars:

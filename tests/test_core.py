@@ -640,6 +640,7 @@ def test_transaction_candidate_endpoint_is_feature_flagged_and_batch_safe(tmp_pa
             "/predict/transactions",
             json={"rows": [{**row, "unexpected_feature": "ignored"}]},
         )
+        schema_response = client.get("/schema/transactions")
 
     assert response.status_code == 200
     body = response.json()
@@ -648,6 +649,38 @@ def test_transaction_candidate_endpoint_is_feature_flagged_and_batch_safe(tmp_pa
     assert body["ignored_features"] == ["unexpected_feature"]
     assert body["results"][0]["fraud_status"] in {"Yes", "No"}
     assert "prediction_id" in body["results"][0]
+    assert schema_response.status_code == 200
+    schema = schema_response.json()
+    assert schema["model_mode"] == "transaction_candidate"
+    assert schema["feature_names"] == list(X.columns)
+    assert schema["feature_count"] == len(X.columns)
+
+
+def test_home_page_targets_transaction_batch_console():
+    with TestClient(app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Transaction risk console" in response.text
+    assert "/predict/transactions" in response.text
+    assert 'action="/predict"' not in response.text
+
+
+def test_version_endpoint_reports_non_sensitive_build_metadata(monkeypatch):
+    monkeypatch.delenv("RENDER_GIT_COMMIT", raising=False)
+    monkeypatch.delenv("APP_COMMIT_SHA", raising=False)
+    monkeypatch.delenv("APP_BUILD_TIME", raising=False)
+    monkeypatch.setenv("BUILD_COMMIT_SHA", "a" * 40)
+    monkeypatch.setenv("BUILD_TIME", "2026-09-22T00:00:00Z")
+
+    with TestClient(app) as client:
+        response = client.get("/version")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "commit_sha": "a" * 40,
+        "build_time": "2026-09-22T00:00:00Z",
+    }
 
 
 def test_transaction_mode_readiness_does_not_require_baseline_artifacts(tmp_path):
