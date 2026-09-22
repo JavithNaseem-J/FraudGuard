@@ -42,8 +42,16 @@ def _request(
     if api_key:
         headers["x-api-key"] = api_key
     request = urllib.request.Request(url, data=data, method=method, headers=headers)
-    with urllib.request.urlopen(request, timeout=15) as response:
-        return response.status, json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            return response.status, json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        payload = error.read().decode("utf-8", errors="replace")
+        try:
+            body = json.loads(payload)
+        except json.JSONDecodeError:
+            body = {"raw_body": payload[:1000]}
+        return error.code, body
 
 
 def main() -> int:
@@ -77,6 +85,7 @@ def main() -> int:
             status, body = _request(f"{base_url}/ready")
             if status == 200 and body.get("status") == "ready":
                 break
+            last_error = f"HTTP {status}: {json.dumps(body, sort_keys=True)}"
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
             last_error = error.__class__.__name__
         time.sleep(10)
@@ -86,7 +95,7 @@ def main() -> int:
 
     status, schema = _request(f"{base_url}/schema/transactions")
     if status != 200 or not schema.get("feature_names"):
-        print("Render schema smoke failed")
+        print(f"Render schema smoke failed: HTTP {status}: {schema}")
         return 1
 
     row = {feature: _sample_value(feature) for feature in schema["feature_names"]}
@@ -98,7 +107,7 @@ def main() -> int:
         api_key=api_key,
     )
     if status != 200 or body.get("row_count") != 1:
-        print("Render prediction smoke failed")
+        print(f"Render prediction smoke failed: HTTP {status}: {body}")
         return 1
     print("Render smoke test passed")
     return 0
