@@ -6,7 +6,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from FraudGuard.data.transaction_benchmark import (
+from FraudGuard.data.transaction_benchmark import (  # noqa: E402
     default_transaction_data_config,
     validate_transaction_data_contract,
 )

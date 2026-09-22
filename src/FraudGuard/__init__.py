@@ -1,1 +1,3 @@
-from FraudGuard.utils.logging import logger as logger
+from FraudGuard.utils.logging import logger
+
+__all__ = ["logger"]

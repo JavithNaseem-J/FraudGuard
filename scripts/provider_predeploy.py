@@ -5,12 +5,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from FraudGuard.cloud.artifacts import (
+from FraudGuard.cloud.artifacts import (  # noqa: E402
     build_transaction_release_manifest,
     validate_release_directory,
     write_manifest,
 )
-from FraudGuard.cloud.settings import load_settings
+from FraudGuard.cloud.settings import load_settings  # noqa: E402
 
 
 def _present(value: str) -> str:
