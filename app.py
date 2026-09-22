@@ -407,7 +407,10 @@ async def placeholder_image(width: int, height: int):
 
 @app.get("/")
 async def home_page(request: Request):
-    return templates.TemplateResponse(request, "index.html")
+    return templates.TemplateResponse(
+        name="index.html",
+        context={"request": request},
+    )
 
 
 @app.post("/predict")
@@ -627,9 +630,9 @@ async def show_results(
         return RedirectResponse(url="/")
 
     return templates.TemplateResponse(
-        request,
-        "result.html",
-        {
+        name="result.html",
+        context={
+            "request": request,
             "prediction_id": prediction_id or "unknown",
             "fraud_status": fraud_status,
             "fraud_probability": float(fraud_probability),
