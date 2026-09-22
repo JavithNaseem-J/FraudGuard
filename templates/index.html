@@ -3,21 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FraudGuard Transaction Console</title>
+    <title>FraudGuard Risk Operations</title>
     <style>
         :root {
-            --ink: #101419;
-            --muted: #65717f;
-            --paper: #f5f1e8;
-            --panel: rgba(255, 252, 244, 0.9);
-            --line: rgba(16, 20, 25, 0.14);
-            --accent: #d84625;
-            --accent-dark: #9f2f1d;
-            --safe: #13795b;
-            --warn: #b7791f;
-            --danger: #b42318;
+            --bg: #f4f6f8;
+            --surface: #ffffff;
+            --surface-2: #f8fafc;
+            --ink: #111827;
+            --muted: #667085;
+            --line: #d8dee6;
+            --line-strong: #b8c0cc;
+            --green: #067647;
+            --green-bg: #e6f4ee;
+            --amber: #b54708;
+            --amber-bg: #fff3dc;
+            --red: #b42318;
+            --red-bg: #fee4e2;
+            --black: #0b1117;
             --mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
-            --display: "Cambria", "Georgia", serif;
             --body: "Aptos", "Segoe UI", system-ui, sans-serif;
         }
 
@@ -27,546 +30,687 @@
             margin: 0;
             min-height: 100vh;
             color: var(--ink);
-            font-family: var(--body);
             background:
-                radial-gradient(circle at 10% 8%, rgba(216, 70, 37, 0.18), transparent 26rem),
-                radial-gradient(circle at 90% 0%, rgba(19, 121, 91, 0.16), transparent 28rem),
-                linear-gradient(135deg, #fbf6eb 0%, #eee5d3 45%, #e8dcc7 100%);
+                linear-gradient(90deg, rgba(11, 17, 23, 0.035) 1px, transparent 1px),
+                linear-gradient(0deg, rgba(11, 17, 23, 0.028) 1px, transparent 1px),
+                var(--bg);
+            background-size: 28px 28px;
+            font-family: var(--body);
         }
 
-        body::before {
-            content: "";
-            position: fixed;
-            inset: 0;
-            pointer-events: none;
-            opacity: 0.25;
-            background-image:
-                linear-gradient(rgba(16, 20, 25, 0.04) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(16, 20, 25, 0.04) 1px, transparent 1px);
-            background-size: 34px 34px;
-            mask-image: linear-gradient(to bottom, #000, transparent 80%);
-        }
+        button, input, select, textarea { font: inherit; }
+        button { border: 0; cursor: pointer; }
+        button:disabled { cursor: not-allowed; opacity: 0.55; }
 
-        .shell {
-            width: min(1180px, calc(100% - 32px));
-            margin: 0 auto;
-            padding: 30px 0 48px;
-        }
-
-        .hero {
+        .app {
             display: grid;
-            grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.6fr);
-            gap: 22px;
-            align-items: stretch;
-            margin-bottom: 22px;
+            grid-template-columns: 260px minmax(0, 1fr);
+            min-height: 100vh;
         }
 
-        .hero-card,
-        .panel,
-        .metric,
-        .notice {
-            border: 1px solid var(--line);
-            background: var(--panel);
-            box-shadow: 0 24px 70px rgba(36, 31, 23, 0.12);
-            backdrop-filter: blur(14px);
+        .rail {
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            padding: 18px;
+            color: #f9fafb;
+            background: var(--black);
+            border-right: 1px solid #202936;
         }
 
-        .hero-card {
-            position: relative;
-            overflow: hidden;
-            border-radius: 30px;
-            padding: 34px;
-        }
-
-        .hero-card::after {
-            content: "";
-            position: absolute;
-            right: -70px;
-            top: -90px;
-            width: 260px;
-            height: 260px;
-            border: 34px solid rgba(216, 70, 37, 0.12);
-            border-radius: 50%;
-        }
-
-        .eyebrow {
-            display: inline-flex;
-            gap: 8px;
-            align-items: center;
-            margin-bottom: 18px;
-            padding: 7px 11px;
-            border: 1px solid var(--line);
-            border-radius: 999px;
-            color: var(--muted);
-            font-size: 12px;
-            font-weight: 700;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-        }
-
-        h1 {
-            margin: 0;
-            max-width: 780px;
-            font-family: var(--display);
-            font-size: clamp(2.5rem, 5vw, 5.3rem);
-            line-height: 0.92;
-            letter-spacing: -0.06em;
-        }
-
-        .hero-copy {
-            max-width: 760px;
-            margin: 20px 0 0;
-            color: #39434d;
-            font-size: 1.04rem;
-        }
-
-        .status-card {
-            border-radius: 30px;
-            padding: 24px;
+        .brand {
             display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            gap: 20px;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 8px 18px;
+            border-bottom: 1px solid #263241;
         }
 
-        .status-pill {
-            display: inline-flex;
-            width: fit-content;
+        .brand-mark {
+            display: grid;
+            width: 38px;
+            height: 38px;
+            place-items: center;
+            border-radius: 10px;
+            background: #f9fafb;
+            color: var(--black);
+            font-weight: 900;
+        }
+
+        .brand strong { display: block; font-size: 16px; }
+        .brand span { display: block; color: #a7b0bf; font-size: 12px; margin-top: 2px; }
+
+        .nav {
+            display: grid;
+            gap: 6px;
+            margin-top: 20px;
+        }
+
+        .nav a,
+        .nav button {
+            display: flex;
             align-items: center;
-            gap: 9px;
-            padding: 8px 12px;
-            border-radius: 999px;
-            font-size: 13px;
-            font-weight: 800;
+            justify-content: space-between;
+            width: 100%;
+            padding: 11px 12px;
+            border-radius: 10px;
+            color: #c9d3df;
+            background: transparent;
+            text-decoration: none;
+            font-weight: 700;
+            text-align: left;
+        }
+
+        .nav a.active,
+        .nav button.active {
+            color: #ffffff;
+            background: #1d2939;
+        }
+
+        .rail-footer {
+            position: absolute;
+            left: 18px;
+            right: 18px;
+            bottom: 18px;
+            padding: 14px;
+            border: 1px solid #2d3a4a;
+            border-radius: 12px;
+            background: #121a23;
+        }
+
+        .rail-footer span { color: #a7b0bf; font-size: 12px; }
+        .rail-footer strong {
+            display: block;
+            margin-top: 6px;
+            color: #ffffff;
+            font-family: var(--mono);
+            font-size: 12px;
+            word-break: break-word;
+        }
+
+        .main {
+            min-width: 0;
+            padding: 20px 24px 32px;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            padding: 14px 18px;
             border: 1px solid var(--line);
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 14px 38px rgba(15, 23, 42, 0.06);
+        }
+
+        .page-title h1 {
+            margin: 0;
+            font-size: 22px;
+            letter-spacing: -0.02em;
+        }
+
+        .page-title p {
+            margin: 4px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .top-actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 32px;
+            padding: 7px 10px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            color: #344054;
+            background: #ffffff;
+            font-size: 12px;
+            font-weight: 800;
+            white-space: nowrap;
         }
 
         .dot {
-            width: 9px;
-            height: 9px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
-            background: var(--warn);
-            box-shadow: 0 0 0 5px rgba(183, 121, 31, 0.12);
+            background: var(--amber);
         }
 
-        .dot.ready {
-            background: var(--safe);
-            box-shadow: 0 0 0 5px rgba(19, 121, 91, 0.14);
+        .dot.ready { background: var(--green); }
+        .dot.error { background: var(--red); }
+
+        .kpis {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 14px;
         }
 
-        .dot.error {
-            background: var(--danger);
-            box-shadow: 0 0 0 5px rgba(180, 35, 24, 0.12);
+        .kpi,
+        .panel {
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.94);
+            box-shadow: 0 14px 38px rgba(15, 23, 42, 0.055);
         }
 
-        .status-grid { display: grid; gap: 12px; }
+        .kpi { padding: 15px; }
 
-        .small-label {
+        .label {
             display: block;
             color: var(--muted);
-            font-size: 12px;
-            font-weight: 800;
+            font-size: 11px;
+            font-weight: 900;
             letter-spacing: 0.08em;
             text-transform: uppercase;
         }
 
-        .small-value {
-            margin-top: 4px;
-            font-family: var(--mono);
-            font-size: 13px;
-            word-break: break-word;
-        }
-
-        .metrics {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 14px;
-            margin-bottom: 22px;
-        }
-
-        .metric {
-            border-radius: 22px;
-            padding: 18px;
-        }
-
-        .metric strong {
+        .kpi strong {
             display: block;
-            margin-top: 6px;
-            font-size: 1.45rem;
+            margin-top: 8px;
+            font-size: 26px;
             letter-spacing: -0.04em;
         }
 
-        .workspace {
+        .kpi small {
+            display: block;
+            margin-top: 4px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .grid {
             display: grid;
-            grid-template-columns: minmax(0, 0.95fr) minmax(360px, 1.05fr);
-            gap: 22px;
+            grid-template-columns: minmax(0, 1.45fr) 390px;
+            gap: 14px;
+            margin-top: 14px;
             align-items: start;
         }
 
-        .panel {
-            border-radius: 28px;
-            padding: 22px;
+        .left-stack,
+        .right-stack {
+            display: grid;
+            gap: 14px;
         }
 
-        .panel h2 {
-            margin: 0 0 8px;
-            font-size: 1.25rem;
-        }
-
-        .panel p {
-            margin: 0;
-            color: var(--muted);
-        }
-
-        .field { margin-top: 18px; }
-
-        label {
+        .panel-header {
             display: flex;
-            justify-content: space-between;
-            gap: 10px;
-            margin-bottom: 8px;
-            color: #26313b;
-            font-size: 13px;
-            font-weight: 800;
-        }
-
-        input,
-        textarea,
-        select {
-            width: 100%;
-            border: 1px solid var(--line);
-            border-radius: 16px;
-            background: rgba(255, 255, 255, 0.74);
-            color: var(--ink);
-            font: 14px var(--mono);
-            outline: none;
-        }
-
-        input,
-        select { padding: 13px 14px; }
-
-        textarea {
-            min-height: 370px;
-            padding: 16px;
-            line-height: 1.55;
-            resize: vertical;
-        }
-
-        input:focus,
-        textarea:focus,
-        select:focus {
-            border-color: rgba(216, 70, 37, 0.72);
-            box-shadow: 0 0 0 4px rgba(216, 70, 37, 0.11);
-        }
-
-        .actions {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 16px;
-        }
-
-        button {
-            border: 0;
-            border-radius: 999px;
-            padding: 12px 16px;
-            font-weight: 850;
-            cursor: pointer;
-            transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
-        }
-
-        button:hover { transform: translateY(-1px); }
-        button:disabled { cursor: not-allowed; opacity: 0.55; transform: none; }
-
-        .primary {
-            color: #fff;
-            background: linear-gradient(135deg, var(--accent), var(--accent-dark));
-            box-shadow: 0 16px 34px rgba(216, 70, 37, 0.22);
-        }
-
-        .secondary {
-            color: var(--ink);
-            background: #fff7e9;
-            border: 1px solid var(--line);
-        }
-
-        .ghost {
-            color: var(--muted);
-            background: transparent;
-            border: 1px solid var(--line);
-        }
-
-        .notice {
-            margin-top: 16px;
-            border-radius: 18px;
-            padding: 14px;
-            color: #4b3f2e;
-            font-size: 13px;
-            box-shadow: none;
-        }
-
-        .notice strong { color: var(--ink); }
-
-        .error {
-            display: none;
-            margin-top: 14px;
-            border: 1px solid rgba(180, 35, 24, 0.24);
-            border-radius: 16px;
-            padding: 12px;
-            color: var(--danger);
-            background: rgba(255, 235, 231, 0.82);
-            font-size: 14px;
-        }
-
-        .results-header {
-            display: flex;
-            justify-content: space-between;
-            gap: 18px;
             align-items: flex-start;
-            margin-bottom: 14px;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 16px 16px 12px;
+            border-bottom: 1px solid var(--line);
         }
 
-        .results-meta {
+        .panel-header h2 {
+            margin: 0;
+            font-size: 16px;
+            letter-spacing: -0.01em;
+        }
+
+        .panel-header p {
+            margin: 4px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .panel-body { padding: 16px; }
+
+        .toolbar {
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
-            margin-top: 12px;
+            align-items: center;
         }
 
-        .chip {
+        .btn {
             display: inline-flex;
             align-items: center;
-            border: 1px solid var(--line);
-            border-radius: 999px;
-            padding: 7px 10px;
-            color: var(--muted);
-            background: rgba(255, 255, 255, 0.56);
-            font: 12px var(--mono);
+            justify-content: center;
+            gap: 8px;
+            min-height: 36px;
+            padding: 8px 12px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 850;
         }
 
-        .empty-state {
+        .btn-primary { color: #ffffff; background: #111827; }
+        .btn-secondary { color: #111827; background: #ffffff; border: 1px solid var(--line-strong); }
+        .btn-danger { color: var(--red); background: var(--red-bg); }
+
+        .field {
             display: grid;
-            min-height: 310px;
-            place-items: center;
-            border: 1px dashed rgba(16, 20, 25, 0.22);
-            border-radius: 22px;
+            gap: 7px;
+            margin-bottom: 12px;
+        }
+
+        .field label {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            color: #344054;
+            font-size: 12px;
+            font-weight: 850;
+        }
+
+        .field label span {
             color: var(--muted);
-            text-align: center;
-            padding: 28px;
+            font-weight: 700;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: #ffffff;
+            color: var(--ink);
+            outline: none;
+        }
+
+        input, select {
+            min-height: 38px;
+            padding: 8px 10px;
+        }
+
+        textarea {
+            min-height: 210px;
+            padding: 12px;
+            resize: vertical;
+            font: 12px/1.55 var(--mono);
+        }
+
+        input:focus, select:focus, textarea:focus {
+            border-color: #6f7682;
+            box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.08);
+        }
+
+        .split-fields {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .notice {
+            margin-top: 12px;
+            padding: 11px 12px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            color: #475467;
+            background: var(--surface-2);
+            font-size: 12px;
+            line-height: 1.45;
+        }
+
+        .error {
+            display: none;
+            margin-top: 12px;
+            padding: 11px 12px;
+            border: 1px solid #fecdca;
+            border-radius: 12px;
+            color: var(--red);
+            background: var(--red-bg);
+            font-size: 13px;
         }
 
         .table-wrap { overflow-x: auto; }
 
         table {
             width: 100%;
+            min-width: 820px;
             border-collapse: collapse;
-            min-width: 680px;
         }
 
-        th,
-        td {
-            padding: 13px 10px;
+        th, td {
+            padding: 12px 10px;
             border-bottom: 1px solid var(--line);
             text-align: left;
-            font-size: 14px;
-            vertical-align: top;
+            vertical-align: middle;
+            font-size: 13px;
         }
 
         th {
             color: var(--muted);
+            background: #f8fafc;
             font-size: 11px;
+            font-weight: 900;
             letter-spacing: 0.08em;
             text-transform: uppercase;
         }
 
-        .risk {
+        tr:hover td { background: #fbfcfe; }
+
+        .risk-badge {
             display: inline-flex;
-            align-items: center;
+            min-width: 84px;
             justify-content: center;
-            min-width: 74px;
-            border-radius: 999px;
             padding: 6px 9px;
-            font-weight: 850;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 900;
         }
 
-        .risk.yes { color: #fff; background: var(--danger); }
-        .risk.no { color: #fff; background: var(--safe); }
-        .scorebar { min-width: 150px; }
+        .risk-high { color: var(--red); background: var(--red-bg); }
+        .risk-review { color: var(--amber); background: var(--amber-bg); }
+        .risk-clear { color: var(--green); background: var(--green-bg); }
+
+        .score {
+            display: grid;
+            gap: 6px;
+            min-width: 150px;
+        }
 
         .bar {
-            height: 9px;
+            height: 8px;
             overflow: hidden;
             border-radius: 999px;
-            background: rgba(16, 20, 25, 0.12);
+            background: #e4e7ec;
         }
 
         .bar span {
             display: block;
             height: 100%;
             border-radius: inherit;
-            background: linear-gradient(90deg, var(--safe), var(--warn), var(--danger));
+            background: linear-gradient(90deg, var(--green), #f79009, var(--red));
         }
 
-        .json-out {
-            max-height: 260px;
-            overflow: auto;
-            margin-top: 16px;
+        .mono { font-family: var(--mono); font-size: 12px; }
+
+        .empty {
+            display: grid;
+            min-height: 250px;
+            place-items: center;
+            padding: 28px;
+            color: var(--muted);
+            text-align: center;
+        }
+
+        .empty strong {
+            display: block;
+            color: var(--ink);
+            font-size: 15px;
+            margin-bottom: 6px;
+        }
+
+        .case-detail { display: grid; gap: 12px; }
+
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 14px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--line);
+            font-size: 13px;
+        }
+
+        .detail-row span:first-child {
+            color: var(--muted);
+            font-weight: 750;
+        }
+
+        .detail-row span:last-child {
+            text-align: right;
+            font-weight: 850;
+        }
+
+        .reason-list { display: grid; gap: 8px; }
+
+        .reason {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px;
             border: 1px solid var(--line);
-            border-radius: 18px;
-            padding: 14px;
-            background: #14181d;
-            color: #f6ead5;
+            border-radius: 10px;
+            background: #ffffff;
+            font-size: 12px;
+        }
+
+        .raw-json {
+            max-height: 240px;
+            overflow: auto;
+            margin: 0;
+            padding: 12px;
+            border-radius: 12px;
+            color: #e7edf5;
+            background: #0f1720;
             font: 12px/1.55 var(--mono);
             white-space: pre-wrap;
         }
 
-        @media (max-width: 920px) {
-            .hero,
-            .workspace,
-            .metrics { grid-template-columns: 1fr; }
-            .hero-card { padding: 26px; }
+        .sr-title {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+        }
+
+        @media (max-width: 1180px) {
+            .app { grid-template-columns: 1fr; }
+            .rail { position: static; height: auto; }
+            .rail-footer { position: static; margin-top: 16px; }
+            .grid, .kpis { grid-template-columns: 1fr; }
+        }
+
+        @media (max-width: 720px) {
+            .main { padding: 14px; }
+            .topbar, .panel-header { flex-direction: column; }
+            .split-fields { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
-    <main class="shell">
-        <section class="hero">
-            <div class="hero-card">
-                <div class="eyebrow">FraudGuard · transaction serving</div>
-                <h1>Transaction risk console</h1>
-                <p class="hero-copy">
-                    Submit production-shaped transaction data to the active batch scoring endpoint.
-                    Paste JSON rows or CSV rows, normalize them to the current model schema, and review
-                    fraud scores, thresholds, and persistence metadata without exposing secrets in source code.
-                </p>
-            </div>
-
-            <aside class="status-card hero-card" aria-live="polite">
+    <h1 class="sr-title">Transaction risk console</h1>
+    <div class="app">
+        <aside class="rail">
+            <div class="brand">
+                <div class="brand-mark">FG</div>
                 <div>
-                    <span class="status-pill"><span id="statusDot" class="dot"></span><span id="serviceStatus">Checking model</span></span>
-                </div>
-                <div class="status-grid">
-                    <div>
-                        <span class="small-label">Model version</span>
-                        <span id="modelVersion" class="small-value">unknown</span>
-                    </div>
-                    <div>
-                        <span class="small-label">Threshold</span>
-                        <span id="thresholdValue" class="small-value">unknown</span>
-                    </div>
-                    <div>
-                        <span class="small-label">Endpoint</span>
-                        <span class="small-value">POST /predict/transactions</span>
-                    </div>
-                </div>
-            </aside>
-        </section>
-
-        <section class="metrics" aria-label="Model schema summary">
-            <div class="metric">
-                <span class="small-label">Required fields</span>
-                <strong id="featureCount">423</strong>
-            </div>
-            <div class="metric">
-                <span class="small-label">Batch limit</span>
-                <strong id="batchLimit">100</strong>
-            </div>
-            <div class="metric">
-                <span class="small-label">Rows loaded</span>
-                <strong id="rowsLoaded">0</strong>
-            </div>
-            <div class="metric">
-                <span class="small-label">Last decision</span>
-                <strong id="lastDecision">—</strong>
-            </div>
-        </section>
-
-        <section class="workspace">
-            <div class="panel">
-                <h2>Request payload</h2>
-                <p>Paste JSON or CSV transaction rows. Missing known schema fields are filled with null before scoring.</p>
-
-                <div class="field">
-                    <label for="apiKeyInput">
-                        API key
-                        <span>stored only in this browser session</span>
-                    </label>
-                    <input id="apiKeyInput" type="password" autocomplete="off" placeholder="Paste FRAUDGUARD_API_KEY for protected deployments">
-                </div>
-
-                <div class="field">
-                    <label for="inputMode">Input format</label>
-                    <select id="inputMode">
-                        <option value="json">JSON rows</option>
-                        <option value="csv">CSV rows</option>
-                    </select>
-                </div>
-
-                <div class="field">
-                    <label for="payloadInput">
-                        Transaction data
-                        <span id="schemaHint">Schema loading…</span>
-                    </label>
-                    <textarea id="payloadInput" spellcheck="false" placeholder='[{"TransactionDT":86400,"TransactionAmt":57.25,"card1":15066,"ProductCD":"W"}]'></textarea>
-                </div>
-
-                <div class="actions">
-                    <button id="predictButton" class="primary">Score transactions</button>
-                    <button id="sampleButton" class="secondary" type="button">Load schema-safe sample</button>
-                    <button id="csvButton" class="secondary" type="button">Load CSV example</button>
-                    <button id="clearButton" class="ghost" type="button">Clear</button>
-                </div>
-
-                <div id="errorMessage" class="error"></div>
-
-                <div class="notice">
-                    <strong>Production note:</strong> this page never embeds your server API key. For a public demo,
-                    paste the key during testing, or build a separate authenticated operator portal later.
+                    <strong>FraudGuard</strong>
+                    <span>Risk operations</span>
                 </div>
             </div>
 
-            <div class="panel">
-                <div class="results-header">
-                    <div>
-                        <h2>Scoring results</h2>
-                        <p id="resultSummary">No transactions scored yet.</p>
-                        <div class="results-meta" id="resultMeta"></div>
-                    </div>
-                    <button id="downloadButton" class="ghost" type="button" disabled>Download JSON</button>
-                </div>
+            <nav class="nav" aria-label="Primary">
+                <a class="active" href="/">Review queue <span id="navQueueCount">0</span></a>
+                <button type="button">Batch scoring <span>JSON/CSV</span></button>
+                <button type="button">Model release <span id="navRelease">loading</span></button>
+                <button type="button">Audit trail <span>live</span></button>
+            </nav>
 
-                <div id="emptyState" class="empty-state">
-                    <div>
-                        <h3>Ready for transaction data</h3>
-                        <p>Load the sample row, paste rows from your prepared transaction data, then score them.</p>
-                    </div>
-                </div>
-
-                <div id="tableWrap" class="table-wrap" hidden>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Row</th>
-                                <th>Decision</th>
-                                <th>Fraud score</th>
-                                <th>Threshold</th>
-                                <th>Prediction ID</th>
-                            </tr>
-                        </thead>
-                        <tbody id="resultsBody"></tbody>
-                    </table>
-                </div>
-
-                <pre id="rawOutput" class="json-out" hidden></pre>
+            <div class="rail-footer">
+                <span>Active endpoint</span>
+                <strong>POST /predict/transactions</strong>
             </div>
-        </section>
-    </main>
+        </aside>
+
+        <main class="main">
+            <section class="topbar">
+                <div class="page-title">
+                    <h1>Risk Operations Console</h1>
+                    <p>Score transaction batches, triage risky rows, and verify the active model release.</p>
+                </div>
+                <div class="top-actions">
+                    <span class="pill"><span id="statusDot" class="dot"></span><span id="serviceStatus">Checking model</span></span>
+                    <span class="pill">Mode <span id="modelMode">transaction_candidate</span></span>
+                    <span class="pill">Persistence <span id="persistenceMode">unknown</span></span>
+                    <span class="pill">Rate limit <span id="rateLimitMode">unknown</span></span>
+                </div>
+            </section>
+
+            <section class="kpis" aria-label="Operational summary">
+                <div class="kpi">
+                    <span class="label">Rows scored</span>
+                    <strong id="rowsLoaded">0</strong>
+                    <small>Current session</small>
+                </div>
+                <div class="kpi">
+                    <span class="label">Flagged for review</span>
+                    <strong id="reviewCount">0</strong>
+                    <small id="reviewRate">0.0% review rate</small>
+                </div>
+                <div class="kpi">
+                    <span class="label">Decision threshold</span>
+                    <strong id="thresholdValue">--</strong>
+                    <small id="modelVersion">Model version loading</small>
+                </div>
+                <div class="kpi">
+                    <span class="label">Feature contract</span>
+                    <strong id="featureCount">--</strong>
+                    <small id="batchLimit">Batch limit --</small>
+                </div>
+            </section>
+
+            <section class="grid">
+                <div class="left-stack">
+                    <section class="panel" aria-labelledby="queueTitle">
+                        <div class="panel-header">
+                            <div>
+                                <h2 id="queueTitle">Transaction Review Queue</h2>
+                                <p id="resultSummary">No scored transactions yet. Load a sample or paste production-shaped rows.</p>
+                            </div>
+                            <div class="toolbar">
+                                <button id="downloadButton" class="btn btn-secondary" type="button" disabled>Export JSON</button>
+                                <button id="clearResultsButton" class="btn btn-secondary" type="button">Clear queue</button>
+                            </div>
+                        </div>
+                        <div id="emptyState" class="empty">
+                            <div>
+                                <strong>No cases in review</strong>
+                                <span>Score a batch to create a review queue with risk scores, decisions, and audit IDs.</span>
+                            </div>
+                        </div>
+                        <div id="tableWrap" class="table-wrap" hidden>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Case</th>
+                                        <th>Decision</th>
+                                        <th>Risk score</th>
+                                        <th>Threshold</th>
+                                        <th>Action</th>
+                                        <th>Prediction ID</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="resultsBody"></tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <section class="panel" aria-labelledby="payloadTitle">
+                        <div class="panel-header">
+                            <div>
+                                <h2 id="payloadTitle">Batch Scoring Workbench</h2>
+                                <p>Paste JSON rows or CSV rows. The console normalizes missing known fields to null before scoring.</p>
+                            </div>
+                            <div class="toolbar">
+                                <button id="sampleButton" class="btn btn-secondary" type="button">Load sample</button>
+                                <button id="csvButton" class="btn btn-secondary" type="button">CSV example</button>
+                            </div>
+                        </div>
+                        <div class="panel-body">
+                            <div class="split-fields">
+                                <div class="field">
+                                    <label for="apiKeyInput">API key <span>session storage only</span></label>
+                                    <input id="apiKeyInput" type="password" autocomplete="off" placeholder="Paste FRAUDGUARD_API_KEY">
+                                </div>
+                                <div class="field">
+                                    <label for="inputMode">Input format <span id="schemaHint">schema loading</span></label>
+                                    <select id="inputMode">
+                                        <option value="json">JSON rows</option>
+                                        <option value="csv">CSV rows</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="field">
+                                <label for="payloadInput">Transaction payload <span id="payloadCount">0 rows prepared</span></label>
+                                <textarea id="payloadInput" spellcheck="false" placeholder='[{"TransactionDT":86400,"TransactionAmt":57.25,"card1":15066,"ProductCD":"W"}]'></textarea>
+                            </div>
+
+                            <div class="toolbar">
+                                <button id="predictButton" class="btn btn-primary">Score batch</button>
+                                <button id="clearButton" class="btn btn-secondary" type="button">Clear payload</button>
+                            </div>
+                            <div id="errorMessage" class="error"></div>
+                            <div class="notice">
+                                This is an operator console for controlled environments. The browser never receives server secrets; paste the API key only for local or protected deployment testing.
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <aside class="right-stack">
+                    <section class="panel" aria-labelledby="caseTitle">
+                        <div class="panel-header">
+                            <div>
+                                <h2 id="caseTitle">Case Detail</h2>
+                                <p id="caseSubtitle">Select a scored transaction to review its decision.</p>
+                            </div>
+                        </div>
+                        <div class="panel-body case-detail">
+                            <div class="detail-row"><span>Status</span><span id="caseStatus">Waiting</span></div>
+                            <div class="detail-row"><span>Risk score</span><span id="caseScore">--</span></div>
+                            <div class="detail-row"><span>Threshold</span><span id="caseThreshold">--</span></div>
+                            <div class="detail-row"><span>Model</span><span id="caseModel">--</span></div>
+                            <div class="reason-list" id="reasonList">
+                                <div class="reason"><span>No case selected</span><strong>--</strong></div>
+                            </div>
+                            <div class="toolbar">
+                                <button class="btn btn-secondary" type="button">Mark reviewed</button>
+                                <button class="btn btn-danger" type="button">Escalate</button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="panel" aria-labelledby="modelTitle">
+                        <div class="panel-header">
+                            <div>
+                                <h2 id="modelTitle">Model Runtime</h2>
+                                <p>Active release and serving contract.</p>
+                            </div>
+                        </div>
+                        <div class="panel-body case-detail">
+                            <div class="detail-row"><span>Release ID</span><span id="releaseId">--</span></div>
+                            <div class="detail-row"><span>Model name</span><span id="modelName">--</span></div>
+                            <div class="detail-row"><span>Schema warnings</span><span id="schemaRiskCount">--</span></div>
+                            <div class="detail-row"><span>Endpoint</span><span>/predict/transactions</span></div>
+                        </div>
+                    </section>
+
+                    <section class="panel" aria-labelledby="rawTitle">
+                        <div class="panel-header">
+                            <div>
+                                <h2 id="rawTitle">Raw Response</h2>
+                                <p>Audit payload from the latest scoring request.</p>
+                            </div>
+                        </div>
+                        <div class="panel-body">
+                            <pre id="rawOutput" class="raw-json">No response yet.</pre>
+                        </div>
+                    </section>
+                </aside>
+            </section>
+        </main>
+    </div>
 
     <script>
         const state = {
             schema: null,
             lastResponse: null,
             featureNames: buildFallbackFeatureNames(),
+            selectedResult: null,
         };
 
         const nodes = {
@@ -577,23 +721,39 @@
             sampleButton: document.getElementById("sampleButton"),
             csvButton: document.getElementById("csvButton"),
             clearButton: document.getElementById("clearButton"),
+            clearResultsButton: document.getElementById("clearResultsButton"),
             downloadButton: document.getElementById("downloadButton"),
             errorMessage: document.getElementById("errorMessage"),
             serviceStatus: document.getElementById("serviceStatus"),
             statusDot: document.getElementById("statusDot"),
+            modelMode: document.getElementById("modelMode"),
+            persistenceMode: document.getElementById("persistenceMode"),
+            rateLimitMode: document.getElementById("rateLimitMode"),
             modelVersion: document.getElementById("modelVersion"),
             thresholdValue: document.getElementById("thresholdValue"),
             featureCount: document.getElementById("featureCount"),
             batchLimit: document.getElementById("batchLimit"),
             rowsLoaded: document.getElementById("rowsLoaded"),
-            lastDecision: document.getElementById("lastDecision"),
+            reviewCount: document.getElementById("reviewCount"),
+            reviewRate: document.getElementById("reviewRate"),
+            navQueueCount: document.getElementById("navQueueCount"),
+            navRelease: document.getElementById("navRelease"),
             schemaHint: document.getElementById("schemaHint"),
+            payloadCount: document.getElementById("payloadCount"),
             resultSummary: document.getElementById("resultSummary"),
-            resultMeta: document.getElementById("resultMeta"),
             emptyState: document.getElementById("emptyState"),
             tableWrap: document.getElementById("tableWrap"),
             resultsBody: document.getElementById("resultsBody"),
             rawOutput: document.getElementById("rawOutput"),
+            caseSubtitle: document.getElementById("caseSubtitle"),
+            caseStatus: document.getElementById("caseStatus"),
+            caseScore: document.getElementById("caseScore"),
+            caseThreshold: document.getElementById("caseThreshold"),
+            caseModel: document.getElementById("caseModel"),
+            reasonList: document.getElementById("reasonList"),
+            releaseId: document.getElementById("releaseId"),
+            modelName: document.getElementById("modelName"),
+            schemaRiskCount: document.getElementById("schemaRiskCount"),
         };
 
         boot();
@@ -607,8 +767,10 @@
             nodes.sampleButton.addEventListener("click", loadSample);
             nodes.csvButton.addEventListener("click", loadCsvExample);
             nodes.clearButton.addEventListener("click", clearInput);
+            nodes.clearResultsButton.addEventListener("click", clearResults);
             nodes.downloadButton.addEventListener("click", downloadLastResponse);
             nodes.inputMode.addEventListener("change", updatePlaceholder);
+            nodes.payloadInput.addEventListener("input", updatePayloadCount);
             await loadSchema();
             loadSample();
         }
@@ -619,29 +781,50 @@
                 if (!response.ok) throw new Error(await readError(response));
                 const schema = await response.json();
                 state.schema = schema;
-                state.featureNames = schema.feature_names && schema.feature_names.length
-                    ? schema.feature_names
-                    : state.featureNames;
+                state.featureNames = schema.feature_names?.length ? schema.feature_names : state.featureNames;
                 nodes.serviceStatus.textContent = "Model ready";
                 nodes.statusDot.className = "dot ready";
+                nodes.modelMode.textContent = schema.model_mode || "transaction_candidate";
                 nodes.modelVersion.textContent = schema.model_version || "unknown";
                 nodes.thresholdValue.textContent = formatScore(schema.threshold);
                 nodes.featureCount.textContent = schema.feature_count || state.featureNames.length;
-                nodes.batchLimit.textContent = schema.max_batch_rows || 100;
+                nodes.batchLimit.textContent = `Batch limit ${schema.max_batch_rows || 100}`;
+                nodes.releaseId.textContent = schema.model_version || "local";
+                nodes.modelName.textContent = schema.model_name || "Transaction model";
+                nodes.schemaRiskCount.textContent = String(schema.schema_risks?.length || 0);
                 nodes.schemaHint.textContent = `${state.featureNames.length} model fields`;
+                nodes.navRelease.textContent = "ready";
+                await loadReadiness();
             } catch (error) {
-                nodes.serviceStatus.textContent = "Schema unavailable";
+                nodes.serviceStatus.textContent = "Model unavailable";
                 nodes.statusDot.className = "dot error";
-                nodes.schemaHint.textContent = "using bundled schema fallback";
+                nodes.schemaHint.textContent = "fallback schema";
                 nodes.featureCount.textContent = state.featureNames.length;
-                showError(`Model schema is not ready yet. You can still prepare payloads. Details: ${error.message}`);
+                showError(`Model schema is not ready. ${error.message}`);
+            }
+        }
+
+        async function loadReadiness() {
+            try {
+                const response = await fetch("/ready");
+                if (!response.ok) throw new Error(await readError(response));
+                const ready = await response.json();
+                nodes.persistenceMode.textContent = ready.persistence || "unknown";
+                nodes.rateLimitMode.textContent = ready.rate_limit || "unknown";
+                const metadata = ready.transaction_candidate || {};
+                nodes.releaseId.textContent = metadata.release_id || "local";
+                nodes.modelName.textContent = metadata.model_name || nodes.modelName.textContent;
+                nodes.schemaRiskCount.textContent = String(metadata.schema_risks?.length || 0);
+            } catch {
+                nodes.persistenceMode.textContent = "unknown";
+                nodes.rateLimitMode.textContent = "unknown";
             }
         }
 
         async function scoreTransactions() {
             hideError();
             nodes.predictButton.disabled = true;
-            nodes.predictButton.textContent = "Scoring…";
+            nodes.predictButton.textContent = "Scoring...";
             try {
                 const parsedRows = parseInput(nodes.payloadInput.value, nodes.inputMode.value);
                 const rows = normalizeRows(parsedRows);
@@ -649,7 +832,6 @@
                 if (rows.length === 0) throw new Error("Add at least one transaction row.");
                 if (rows.length > limit) throw new Error(`Batch row count exceeds limit: ${limit}`);
 
-                nodes.rowsLoaded.textContent = rows.length;
                 const headers = {"Content-Type": "application/json"};
                 const apiKey = nodes.apiKeyInput.value.trim();
                 if (apiKey) headers["x-api-key"] = apiKey;
@@ -668,7 +850,7 @@
                 showError(error.message);
             } finally {
                 nodes.predictButton.disabled = false;
-                nodes.predictButton.textContent = "Score transactions";
+                nodes.predictButton.textContent = "Score batch";
             }
         }
 
@@ -748,52 +930,74 @@
         }
 
         function renderResults(payload) {
-            nodes.emptyState.hidden = true;
-            nodes.tableWrap.hidden = false;
-            nodes.rawOutput.hidden = false;
-            nodes.downloadButton.disabled = false;
-            nodes.resultsBody.innerHTML = "";
             const results = payload.results || [];
             const risky = results.filter((row) => row.fraud_status === "Yes").length;
-            nodes.lastDecision.textContent = risky ? `${risky} review` : "Clear";
-            nodes.resultSummary.textContent = `${results.length} transaction${results.length === 1 ? "" : "s"} scored. ${risky} flagged for review.`;
-            nodes.resultMeta.innerHTML = "";
-            addChip(`request ${payload.request_id || "unknown"}`);
-            addChip(`model ${payload.model_version || "unknown"}`);
-            addChip(`${payload.feature_count || state.featureNames.length} features`);
-            addChip(`${Math.round(payload.latency_ms || 0)} ms`);
-            if (payload.ignored_features && payload.ignored_features.length) {
-                addChip(`${payload.ignored_features.length} ignored extra fields`);
-            }
+            nodes.emptyState.hidden = true;
+            nodes.tableWrap.hidden = false;
+            nodes.downloadButton.disabled = false;
+            nodes.resultsBody.innerHTML = "";
+            nodes.rowsLoaded.textContent = String(results.length);
+            nodes.reviewCount.textContent = String(risky);
+            nodes.navQueueCount.textContent = String(risky || results.length);
+            nodes.reviewRate.textContent = `${formatRate(risky, results.length)} review rate`;
+            nodes.resultSummary.textContent = `${results.length} transactions scored. ${risky} routed for manual review.`;
+            nodes.rawOutput.textContent = JSON.stringify(payload, null, 2);
 
             for (const result of results) {
+                const tier = riskTier(result.fraud_score, result.fraud_status);
                 const tr = document.createElement("tr");
                 tr.innerHTML = `
-                    <td>${escapeHtml(String(result.row_index))}</td>
-                    <td><span class="risk ${result.fraud_status === "Yes" ? "yes" : "no"}">${result.fraud_status === "Yes" ? "Review" : "Clear"}</span></td>
-                    <td class="scorebar">
-                        <strong>${formatPercent(result.fraud_score)}</strong>
-                        <div class="bar"><span style="width:${Math.max(0, Math.min(100, result.fraud_score * 100))}%"></span></div>
+                    <td class="mono">TX-${String(result.row_index).padStart(4, "0")}</td>
+                    <td><span class="risk-badge ${tier.className}">${tier.label}</span></td>
+                    <td>
+                        <div class="score">
+                            <strong>${formatPercent(result.fraud_score)}</strong>
+                            <div class="bar"><span style="width:${Math.max(0, Math.min(100, result.fraud_score * 100))}%"></span></div>
+                        </div>
                     </td>
-                    <td>${formatScore(result.threshold_used)}</td>
-                    <td><code>${escapeHtml(result.prediction_id || "unknown")}</code></td>
+                    <td class="mono">${formatScore(result.threshold_used)}</td>
+                    <td>${result.fraud_status === "Yes" ? "Manual review" : "Auto clear"}</td>
+                    <td class="mono">${escapeHtml(result.prediction_id || "unknown")}</td>
                 `;
+                tr.addEventListener("click", () => renderCaseDetail(result, payload));
                 nodes.resultsBody.appendChild(tr);
             }
-            nodes.rawOutput.textContent = JSON.stringify(payload, null, 2);
+            if (results[0]) renderCaseDetail(results[0], payload);
         }
 
-        function addChip(text) {
-            const chip = document.createElement("span");
-            chip.className = "chip";
-            chip.textContent = text;
-            nodes.resultMeta.appendChild(chip);
+        function renderCaseDetail(result, payload) {
+            state.selectedResult = result;
+            const tier = riskTier(result.fraud_score, result.fraud_status);
+            nodes.caseSubtitle.textContent = `TX-${String(result.row_index).padStart(4, "0")} selected`;
+            nodes.caseStatus.textContent = tier.label;
+            nodes.caseScore.textContent = formatPercent(result.fraud_score);
+            nodes.caseThreshold.textContent = formatScore(result.threshold_used);
+            nodes.caseModel.textContent = payload.model_version || "unknown";
+            nodes.reasonList.innerHTML = "";
+            const reasons = [
+                ["Decision", result.fraud_status === "Yes" ? "Score exceeds threshold" : "Below threshold"],
+                ["Calibration", result.score_is_calibrated ? "Calibrated score" : "Raw model score"],
+                ["Features", `${payload.feature_count || state.featureNames.length} evaluated`],
+            ];
+            for (const [name, value] of reasons) {
+                const item = document.createElement("div");
+                item.className = "reason";
+                item.innerHTML = `<span>${escapeHtml(name)}</span><strong>${escapeHtml(value)}</strong>`;
+                nodes.reasonList.appendChild(item);
+            }
+        }
+
+        function riskTier(score, status) {
+            if (status === "Yes" && score >= 0.7) return {label: "High risk", className: "risk-high"};
+            if (status === "Yes") return {label: "Review", className: "risk-review"};
+            return {label: "Clear", className: "risk-clear"};
         }
 
         function loadSample() {
             nodes.inputMode.value = "json";
             updatePlaceholder();
             nodes.payloadInput.value = JSON.stringify([createSampleRow()], null, 2);
+            updatePayloadCount();
             hideError();
         }
 
@@ -805,6 +1009,7 @@
                 "86400,57.25,15066,321,150,226,315,87,1,1,14,1,W,visa,debit,gmail.com,desktop",
                 "172800,425.90,9500,111,150,224,204,87,4,2,2,0,C,mastercard,credit,outlook.com,mobile",
             ].join("\n");
+            updatePayloadCount();
             hideError();
         }
 
@@ -835,14 +1040,45 @@
 
         function clearInput() {
             nodes.payloadInput.value = "";
-            nodes.rowsLoaded.textContent = "0";
+            nodes.payloadCount.textContent = "0 rows prepared";
             hideError();
+        }
+
+        function clearResults() {
+            state.lastResponse = null;
+            state.selectedResult = null;
+            nodes.emptyState.hidden = false;
+            nodes.tableWrap.hidden = true;
+            nodes.downloadButton.disabled = true;
+            nodes.resultsBody.innerHTML = "";
+            nodes.rawOutput.textContent = "No response yet.";
+            nodes.rowsLoaded.textContent = "0";
+            nodes.reviewCount.textContent = "0";
+            nodes.navQueueCount.textContent = "0";
+            nodes.reviewRate.textContent = "0.0% review rate";
+            nodes.resultSummary.textContent = "No scored transactions yet. Load a sample or paste production-shaped rows.";
+            nodes.caseSubtitle.textContent = "Select a scored transaction to review its decision.";
+            nodes.caseStatus.textContent = "Waiting";
+            nodes.caseScore.textContent = "--";
+            nodes.caseThreshold.textContent = "--";
+            nodes.caseModel.textContent = "--";
+            nodes.reasonList.innerHTML = '<div class="reason"><span>No case selected</span><strong>--</strong></div>';
+        }
+
+        function updatePayloadCount() {
+            try {
+                const rows = parseInput(nodes.payloadInput.value, nodes.inputMode.value);
+                nodes.payloadCount.textContent = `${rows.length} row${rows.length === 1 ? "" : "s"} prepared`;
+            } catch {
+                nodes.payloadCount.textContent = "not parseable yet";
+            }
         }
 
         function updatePlaceholder() {
             nodes.payloadInput.placeholder = nodes.inputMode.value === "csv"
                 ? "TransactionDT,TransactionAmt,card1,ProductCD\n86400,57.25,15066,W"
                 : '[{"TransactionDT":86400,"TransactionAmt":57.25,"card1":15066,"ProductCD":"W"}]';
+            updatePayloadCount();
         }
 
         function downloadLastResponse() {
@@ -851,7 +1087,7 @@
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.href = url;
-            link.download = `fraudguard-transaction-results-${Date.now()}.json`;
+            link.download = `fraudguard-risk-results-${Date.now()}.json`;
             link.click();
             URL.revokeObjectURL(url);
         }
@@ -878,16 +1114,20 @@
 
         function formatScore(value) {
             const number = Number(value);
-            return Number.isFinite(number) ? number.toFixed(4) : "unknown";
+            return Number.isFinite(number) ? number.toFixed(4) : "--";
         }
 
         function formatPercent(value) {
             const number = Number(value);
-            return Number.isFinite(number) ? `${(number * 100).toFixed(1)}%` : "unknown";
+            return Number.isFinite(number) ? `${(number * 100).toFixed(1)}%` : "--";
+        }
+
+        function formatRate(count, total) {
+            return total ? `${((count / total) * 100).toFixed(1)}%` : "0.0%";
         }
 
         function escapeHtml(value) {
-            return value.replace(/[&<>"']/g, (char) => ({
+            return String(value).replace(/[&<>"']/g, (char) => ({
                 "&": "&amp;",
                 "<": "&lt;",
                 ">": "&gt;",
