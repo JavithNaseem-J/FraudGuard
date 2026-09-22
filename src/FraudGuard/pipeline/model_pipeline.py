@@ -1,7 +1,7 @@
-from FraudGuard.utils.logging import logger
 from FraudGuard.config.config import ConfigurationManager
 from FraudGuard.components.training import Trainer
 from FraudGuard.components.evaluation import Evaluation
+
 
 class ModelPipeline:
     def __init__(self):

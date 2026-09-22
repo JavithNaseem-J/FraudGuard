@@ -1,40 +1,37 @@
 import os
 import json
 import joblib
-import boto3
 import yaml
-import mlflow
-import dagshub
 from typing import Any
 from pathlib import Path
 from FraudGuard.utils.logging import logger
-from botocore.exceptions import ClientError
-from ensure import ensure_annotations
 
 
-@ensure_annotations
-def download_from_s3(bucket: str, s3_path: str, local_path: Path, aws_region: str = None) -> bool:
+def download_from_s3(
+    bucket: str, s3_path: str, local_path: Path, aws_region: str = None
+) -> bool:
     """Download a file from an S3 bucket."""
     try:
-        profile = os.getenv('AWS_PROFILE')
+        import boto3
+
+        profile = os.getenv("AWS_PROFILE")
         if profile:
             session = boto3.Session(profile_name=profile)
         else:
             session = boto3.Session()
 
         s3_client = session.client(
-            's3',
-            region_name=aws_region or os.getenv('AWS_REGION', 'us-east-1')
+            "s3", region_name=aws_region or os.getenv("AWS_REGION", "us-east-1")
         )
         local_path.parent.mkdir(parents=True, exist_ok=True)
         s3_client.download_file(bucket, s3_path, str(local_path))
         logger.info(f"Downloaded s3://{bucket}/{s3_path} to {local_path}")
         return True
-    except ClientError as e:
+    except Exception as e:
         logger.error(f"Failed to download s3://{bucket}/{s3_path}: {str(e)}")
         return False
 
-@ensure_annotations
+
 def read_yaml(path_to_yaml: Path) -> dict:
     try:
         with open(path_to_yaml) as yaml_file:
@@ -45,7 +42,6 @@ def read_yaml(path_to_yaml: Path) -> dict:
         raise e
 
 
-@ensure_annotations
 def create_directories(path_to_directories: list, verbose=True):
     """create list of directories
 
@@ -59,7 +55,6 @@ def create_directories(path_to_directories: list, verbose=True):
             logger.info(f"created directory at: {path}")
 
 
-@ensure_annotations
 def save_json(path: Path, data: dict):
     """save json data
 
@@ -73,7 +68,6 @@ def save_json(path: Path, data: dict):
     logger.info(f"json file saved at: {path}")
 
 
-@ensure_annotations
 def load_json(path: Path) -> dict:
     with open(path) as f:
         content = json.load(f)
@@ -82,15 +76,12 @@ def load_json(path: Path) -> dict:
     return content
 
 
-
-@ensure_annotations
 def save_bin(data: object, path: Path):
 
     joblib.dump(value=data, filename=path)
     logger.info(f"binary file saved at: {path}")
 
 
-@ensure_annotations
 def load_bin(path: Path) -> Any:
     """load binary data
 
@@ -105,9 +96,6 @@ def load_bin(path: Path) -> Any:
     return data
 
 
-
-
-@ensure_annotations
 def get_size(path: Path) -> str:
     """get size in KB
 
@@ -117,13 +105,13 @@ def get_size(path: Path) -> str:
     Returns:
         str: size in KB
     """
-    size_in_kb = round(os.path.getsize(path)/1024)
+    size_in_kb = round(os.path.getsize(path) / 1024)
     return f"~ {size_in_kb} KB"
 
 
 _mlflow_initialized = False
 
-@ensure_annotations
+
 def init_mlflow_tracking(mlflow_username: str = None, mlflow_password: str = None):
     """
     Initialize MLflow and DagsHub tracking once.
@@ -131,15 +119,29 @@ def init_mlflow_tracking(mlflow_username: str = None, mlflow_password: str = Non
     global _mlflow_initialized
     if _mlflow_initialized:
         return
-    
+
+    if not (mlflow_username and mlflow_password):
+        logger.info(
+            "MLflow credentials not provided; remote tracking remains disabled."
+        )
+        return
+
+    try:
+        import dagshub
+        import mlflow
+    except ImportError as error:
+        raise RuntimeError(
+            "DagsHub and MLflow are required when remote tracking is enabled"
+        ) from error
+
     if mlflow_username:
         os.environ["MLFLOW_TRACKING_USERNAME"] = mlflow_username
     if mlflow_password:
         os.environ["MLFLOW_TRACKING_PASSWORD"] = mlflow_password
-    
-    dagshub.init(repo_owner='JavithNaseem-J', repo_name='FraudGuard')
-    mlflow.set_tracking_uri('https://dagshub.com/JavithNaseem-J/FraudGuard.mlflow')
+
+    dagshub.init(repo_owner="JavithNaseem-J", repo_name="FraudGuard")
+    mlflow.set_tracking_uri("https://dagshub.com/JavithNaseem-J/FraudGuard.mlflow")
     mlflow.set_experiment("Fraud-Detection")
-    
+
     _mlflow_initialized = True
     logger.info("MLflow and DagsHub tracking initialized.")

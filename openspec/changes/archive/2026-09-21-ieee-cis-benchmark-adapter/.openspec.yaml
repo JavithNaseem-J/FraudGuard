@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-09-21
+goal: Add a dedicated IEEE-CIS benchmark adapter that prepares labeled training
+  data, keeps public test data unlabeled, and evaluates cost-weighted fraud
+  performance without contaminating the serving API.

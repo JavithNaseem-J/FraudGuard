@@ -1,5 +1,10 @@
-# Environment variables
+# Environment variables and secrets
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -52,6 +57,9 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pytype/
 cover/
 
 # Translations
@@ -80,6 +88,7 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+notebooks/
 
 # IPython
 profile_default/
@@ -131,7 +140,6 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
 .venv
 env/
 venv/
@@ -171,13 +179,27 @@ cython_debug/
 #.idea/
 
 # Ruff stuff:
-.ruff_cache/
 
 # PyPI configuration file
 .pypirc
 
 
+# IDE and local tool state
+.vscode/
+.idea/
+graphify-out/
+
+# Local services and runtime output
+logs/
 remote/
 artifacts/
 mlruns/
+catboost_info/
+
+# Local raw datasets are intentionally not versioned.
+data/*.csv
+
+# DVC local state
+.dvc/cache/
+.dvc/tmp/
 

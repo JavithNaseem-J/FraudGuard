@@ -1,79 +1,24 @@
 stages:
-  ingestion:
-    cmd: python -m FraudGuard.components.ingestion
+  transaction_contract:
+    cmd: python -m scripts.transaction_data_contract
     deps:
-      - src/FraudGuard/config/config.py
-      - src/FraudGuard/components/ingestion.py
-      - src/FraudGuard/entity/config_entity.py
-      - src/FraudGuard/utils/helpers.py
-      - config_file/config.yaml
+      - src/FraudGuard/data/ieee_cis_adapter.py
+      - src/FraudGuard/data/transaction_benchmark.py
+      - scripts/transaction_data_contract.py
+      - data/train_transaction.csv
     outs:
-      - artifacts/ingestion
+      - artifacts/benchmark/transaction_data/contract_report.json
 
-  validation:
-    cmd: python -m FraudGuard.components.validation
+  transaction_smoke_benchmark:
+    cmd: python -m scripts.transaction_smoke_benchmark
     deps:
-      - src/FraudGuard/config/config.py
-      - src/FraudGuard/components/validation.py
-      - src/FraudGuard/entity/config_entity.py
-      - config_file/config.yaml
-      - config_file/schema.yaml
-      - artifacts/ingestion/Fraud-data.csv
+      - src/FraudGuard/data/ieee_cis_adapter.py
+      - src/FraudGuard/data/transaction_benchmark.py
+      - src/FraudGuard/utils/costs.py
+      - scripts/transaction_smoke_benchmark.py
+      - data/train_transaction.csv
     outs:
-      - artifacts/validation/status.json
-
-  preprocess:
-    cmd: python -m FraudGuard.components.preprocess
-    deps:
-      - src/FraudGuard/config/config.py
-      - src/FraudGuard/components/preprocess.py
-      - src/FraudGuard/entity/config_entity.py
-      - src/FraudGuard/utils/helpers.py
-      - config_file/config.yaml
-      - config_file/params.yaml
-      - config_file/schema.yaml
-      - artifacts/ingestion/Fraud-data.csv
-      - artifacts/validation/status.json
-    outs:
-      - artifacts/transform/split/train.csv
-      - artifacts/transform/split/test.csv
-      - artifacts/transform/process/train_processed.npy
-      - artifacts/transform/process/test_processed.npy
-      - artifacts/transform/preprocess/preprocessor.pkl
-      - artifacts/transform/preprocess/label_encoders.pkl
-
-  training:
-    cmd: python -m FraudGuard.components.training
-    deps:
-      - src/FraudGuard/config/config.py
-      - src/FraudGuard/components/training.py
-      - src/FraudGuard/entity/config_entity.py
-      - src/FraudGuard/utils/helpers.py
-      - config_file/config.yaml
-      - config_file/params.yaml
-      - config_file/schema.yaml
-      - artifacts/transform/process/train_processed.npy
-      - artifacts/transform/process/test_processed.npy
-    outs:
-      - artifacts/trainer/model.joblib
-      - artifacts/trainer/best_model_info.json
-
-  evaluation:
-    cmd: python -m FraudGuard.components.evaluation
-    deps:
-      - src/FraudGuard/config/config.py
-      - src/FraudGuard/components/evaluation.py
-      - src/FraudGuard/entity/config_entity.py
-      - src/FraudGuard/utils/helpers.py
-      - config_file/config.yaml
-      - config_file/params.yaml
-      - config_file/schema.yaml
-      - artifacts/transform/split/train.csv
-      - artifacts/transform/split/test.csv
-      - artifacts/transform/preprocess/preprocessor.pkl
-      - artifacts/trainer/model.joblib
-    outs:
-      - artifacts/evaluation/cm.png
-      - artifacts/evaluation/roc.png
-    metrics:
-      - artifacts/evaluation/metrics.json
+      - artifacts/benchmark/transaction_data/train.csv
+      - artifacts/benchmark/transaction_data/validation.csv
+      - artifacts/benchmark/transaction_data/test.csv
+      - artifacts/benchmark/transaction_data/smoke_benchmark_report.json

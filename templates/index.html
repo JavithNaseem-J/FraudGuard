@@ -364,13 +364,26 @@
                 loadingElement.style.display = 'block';
                 errorMessageElement.style.display = 'none';
                 
-                // Collect form data
+                // Collect form data and send a JSON API request.
                 const formData = new FormData(form);
+                const payload = {
+                    transaction_type: formData.get('Transaction_Type'),
+                    device_used: formData.get('Device_Used'),
+                    location: formData.get('Location'),
+                    payment_method: formData.get('Payment_Method'),
+                    transaction_amount: Number(formData.get('Transaction_Amount')),
+                    time_of_transaction: Number(formData.get('Time_of_Transaction')),
+                    previous_fraudulent_transactions: Number(formData.get('Previous_Fraudulent_Transactions')),
+                    account_age: Number(formData.get('Account_Age')),
+                    number_of_transactions_last_24h: Number(formData.get('Number_of_Transactions_Last_24H'))
+                };
                 
-                // Send form data using fetch API
                 fetch('/predict', {
                     method: 'POST',
-                    body: formData
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
                 })
                 .then(response => {
                     if (!response.ok) {
@@ -382,13 +395,13 @@
                     // Hide loading indicator
                     loadingElement.style.display = 'none';
                     
-                    if (data.error) {
+                    if (data.error || data.detail) {
                         // Show error message
-                        errorMessageElement.textContent = data.error;
+                        errorMessageElement.textContent = data.error || data.detail;
                         errorMessageElement.style.display = 'block';
-                    } else if (data.redirect) {
+                    } else if (data.results_url) {
                         // Redirect to results page
-                        window.location.href = data.redirect;
+                        window.location.href = data.results_url;
                     }
                 })
                 .catch(error => {

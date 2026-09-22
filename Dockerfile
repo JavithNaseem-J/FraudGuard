@@ -3,44 +3,45 @@ FROM python:3.11-slim
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app/src \
+    ARTIFACT_CACHE_ROOT=/app/runtime/model-releases
 
+WORKDIR /app
+
+# Install locked dependencies while native build tools are available, then
+# remove the build-only packages from the runtime image.
+COPY requirements.lock ./
+COPY pyproject.toml ./
 RUN apt-get update && apt-get install -y \
     curl \
     gcc \
     g++ \
     libc-dev \
-    && rm -rf /var/lib/apt/lists/* \
     && pip install uv \
-    && apt-get purge -y --auto-remove gcc g++ libc-dev
+    && uv pip install --system -r requirements.lock \
+    && apt-get purge -y --auto-remove gcc g++ libc-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser
-
-WORKDIR /app
-
-# Copy Poetry files and install dependencies
-COPY pyproject.toml uv.lock ./
-RUN uv pip install --system -r <(uv pip compile pyproject.toml)
 
 # Copy application and artifacts
 COPY src/ ./src/
 COPY config_file/ ./config_file/
 COPY templates/ ./templates/
-COPY artifacts/ ./artifacts/
 COPY app.py .
-COPY main.py .
 
 # Set permissions
-RUN chown -R appuser:appuser /app
+RUN mkdir -p /app/runtime/model-releases \
+    && chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser
 
-# Healthcheck (verify /health endpoint exists in app.py)
+# Healthcheck uses liveness; readiness is exposed separately at /ready.
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:${PORT:-8000}/live || exit 1
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}"]

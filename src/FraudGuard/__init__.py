@@ -1,1 +1,1 @@
-from FraudGuard.utils.logging import logger
+from FraudGuard.utils.logging import logger as logger

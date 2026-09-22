@@ -325,7 +325,7 @@
             
             <div class="card transaction-details-card animate-in delay-1">
                 <div class="card-header">
-                    <h2>Transaction Details</h2>
+                    <h2>Prediction Metadata</h2>
                 </div>
                 <div id="transactionDetails">
                     <!-- Transaction details will be populated here -->
@@ -348,27 +348,25 @@
             // Get URL parameters
             const urlParams = new URLSearchParams(window.location.search);
             
-            // Get fraud status and probability from URL parameters
+            // Get prediction metadata from URL parameters. Raw transaction data is
+            // intentionally not passed through the browser URL.
+            const predictionId = urlParams.get('prediction_id');
             const fraudStatus = urlParams.get('fraud_status');
             const fraudProbability = parseFloat(urlParams.get('fraud_probability'));
-            
-            // Get and parse transaction data from URL parameters
-            let transactionData;
-            try {
-                const dataParam = urlParams.get('data');
-                transactionData = dataParam ? JSON.parse(decodeURIComponent(dataParam)) : {};
-            } catch (e) {
-                console.error("Error parsing transaction data:", e);
-                transactionData = {};
-            }
-            
-            console.log("Fraud Status:", fraudStatus);
-            console.log("Fraud Probability:", fraudProbability);
-            console.log("Transaction Data:", transactionData);
+            const thresholdUsed = urlParams.get('threshold_used');
+            const confidence = urlParams.get('confidence');
+            const modelVersion = urlParams.get('model_version');
+            const scoreIsCalibrated = urlParams.get('score_is_calibrated');
             
             // Initialize the result page with the extracted data
-            if (fraudStatus && fraudProbability !== undefined && transactionData) {
-                initializeResultPage(transactionData, {
+            if (fraudStatus && !Number.isNaN(fraudProbability)) {
+                initializeResultPage({
+                    prediction_id: predictionId || 'unknown',
+                    threshold_used: thresholdUsed || 'unknown',
+                    confidence: confidence || 'unknown',
+                    model_version: modelVersion || 'unknown',
+                    score_is_calibrated: scoreIsCalibrated || 'false'
+                }, {
                     fraud_status: fraudStatus,
                     fraud_probability: fraudProbability
                 });
@@ -415,14 +413,17 @@
                 resultBoxClass = 'fraud';
                 resultIcon = '⚠';
                 resultTitle = 'Fraud Detected';
+                resultMessage = 'This transaction should be reviewed before action.';
             } else if (probabilityPercentage > 30) {
                 resultBoxClass = 'warning';
                 resultIcon = '⚠';
                 resultTitle = 'Suspicious Activity';
+                resultMessage = 'The model score is elevated. Review is recommended.';
             } else {
                 resultBoxClass = 'safe';
                 resultIcon = '✓';
                 resultTitle = 'No Fraud Detected';
+                resultMessage = 'The transaction is below the stored fraud threshold.';
             }
             
             resultBoxContainer.innerHTML = `
@@ -437,15 +438,8 @@
             const transactionDetails = document.getElementById('transactionDetails');
             transactionDetails.innerHTML = '';
             
-            // Format the values for better readability
-            const formattedData = {
-                ...transactionData,
-                Transaction_Amount: formatCurrency(transactionData.Transaction_Amount),
-                Time_of_Transaction: formatTime(transactionData.Time_of_Transaction)
-            };
-            
             // Create detail rows
-            for (const [key, value] of Object.entries(formattedData)) {
+            for (const [key, value] of Object.entries(transactionData)) {
                 const formattedKey = key.replace(/_/g, ' ');
                 
                 const detailRow = document.createElement('div');

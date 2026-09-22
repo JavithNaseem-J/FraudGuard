@@ -68,3 +68,4 @@ build-backend = "poetry.core.masonry.api"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v"
+pythonpath = ["src", "."]

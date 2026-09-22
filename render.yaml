@@ -1,0 +1,63 @@
+services:
+  - type: web
+    name: fraudguard-api
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /live
+    envVars:
+      # Runtime
+      - key: APP_ENV
+        value: render
+      - key: FRAUD_MODEL_MODE
+        value: transaction_candidate
+      - key: AUTH_REQUIRED
+        value: "true"
+      - key: FRAUDGUARD_API_KEY
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+
+      # Transaction model release selection. The release ID must match the
+      # immutable bundle uploaded to private Supabase Storage.
+      - key: TRANSACTION_CANDIDATE_ARTIFACT_ROOT
+        value: /app/runtime/model-releases/local
+      - key: TRANSACTION_ARTIFACT_RELEASE_ID
+        sync: false
+      - key: ROLLBACK_RELEASE_ID
+        sync: false
+      - key: ARTIFACT_STORAGE_BUCKET
+        sync: false
+      - key: ARTIFACT_CACHE_ROOT
+        value: /app/runtime/model-releases
+      - key: ARTIFACT_DOWNLOAD_TIMEOUT_SECONDS
+        value: "20"
+      - key: ARTIFACT_DOWNLOAD_RETRIES
+        value: "2"
+
+      # Request and batch guardrails
+      - key: MAX_REQUEST_BYTES
+        value: "1048576"
+      - key: MAX_BATCH_ROWS
+        value: "100"
+
+      # Rate limiting. Keep Upstash values as Render secrets.
+      - key: RATE_LIMIT_REQUESTS
+        value: "20"
+      - key: RATE_LIMIT_WINDOW_SECONDS
+        value: "60"
+      - key: UPSTASH_FAIL_CLOSED
+        value: "false"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+
+      # Persistence is enabled by default when Supabase credentials are present.
+      - key: DISABLE_PREDICTION_PERSISTENCE
+        value: "false"

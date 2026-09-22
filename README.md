@@ -1,305 +1,118 @@
-# 🛡️ FraudGuard
+# FraudGuard
 
-**Production-Ready Bank Fraud Detection with Modern MLOps**
+FraudGuard is a tabular transaction-fraud project with a FastAPI serving API, transaction-data benchmark workflow, immutable model release handling, and free-tier cloud deployment configuration for Render, Supabase, Upstash Redis, and Evidently OSS.
 
-[![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://python.org)
-[![MLflow](https://img.shields.io/badge/MLflow-Tracking-orange.svg)](https://mlflow.org)
-[![DVC](https://img.shields.io/badge/DVC-Pipeline-purple.svg)](https://dvc.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-Production-green.svg)](https://fastapi.tiangolo.com)
-[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://docker.com)
+Production serving now uses the transaction model path. The older single-CSV baseline is retained only as historical comparison evidence and is not required for production startup, CI, DVC, Render, or predeploy checks.
 
----
+## Production Path
 
-## 💼 Business Value
+1. Train or select a transaction model package from local transaction data.
+2. Validate the package contract and write a manifest with file sizes and SHA-256 checksums.
+3. Publish the immutable release to private Supabase Storage.
+4. Configure Render with `FRAUD_MODEL_MODE=transaction_candidate` and `TRANSACTION_ARTIFACT_RELEASE_ID`.
+5. On startup, the API downloads or reuses the verified cached release, validates integrity, loads the model, and exposes readiness only after the selected release is usable.
+6. Authenticated `/predict/transactions` requests are rate-limited through Upstash and can persist sanitized prediction metadata to Supabase.
+7. Evidently batch jobs can produce drift and delayed-label performance reports from sanitized records.
 
-### The Problem
-Traditional rule-based fraud detection systems suffer from:
-- **High False Positive Rate:** 12-15% of legitimate transactions blocked → Lost revenue + Customer frustration
-- **Slow Adaptation:** Adding new fraud patterns requires manual rule updates → Weeks of delay
-- **Limited Pattern Recognition:** Can only detect known fraud signatures
+## Current Transaction Model Evidence
 
-### Our Solution
-ML-powered fraud detection that:
-- ✅ **Reduces False Positives:** From ~15% (rule-based) to **9.1%** (precision: 94.1%)
-- ✅ **Detects Complex Patterns:** Identifies fraud through behavioral analysis, not just rules
-- ✅ **Adapts Automatically:** Retraining pipeline keeps model current with new fraud tactics
-- ✅ **Real-Time Processing:** <50ms inference time
-- ✅ **Production-Ready:** Input validation, rate limiting, health checks, model versioning
+The latest bounded transaction-data candidate run used 75,000 labeled rows and evaluated on a 15,000-row internal labeled split:
 
+| Metric | Value |
+| --- | ---: |
+| Average precision / PR-AUC | 0.7192 |
+| ROC-AUC | 0.9409 |
+| Precision at threshold | 0.3033 |
+| Recall at threshold | 0.7921 |
+| F1 at threshold | 0.4387 |
+| Brier score | 0.0209 |
+| Cost-weighted average loss | 0.1610 |
 
-## 📊 Model Performance (Real Results)
+There is no public test target in this workspace, so public test performance is not claimed.
 
-### Dataset
-- **Size:** 51,000 bank transactions
-- **Fraud Rate:** 4.9% (highly imbalanced)
-- **Train/Test Split:** 80/20 (stratified)
-- **Cross-Validation:** 5-fold
+## Local Setup
 
-### Key Metrics (Test Set: 10,200 transactions)
-
-| Metric | Value | Why It Matters |
-|--------|-------|----------------|
-| **F1 Score** | **91.2%** | Balanced performance (precision + recall) |
-| **Precision** | **94.1%** | Only 5.9% false positives → Fewer frustrated customers |
-| **Recall** | **88.7%** | Catches 88.7% of fraud → Strong fraud prevention |
-| **AUC-ROC** | **0.95** | Excellent discrimination ability |
-| **Inference Time** | **<50ms** | Fast enough for real-time payment processing |
-
-
----
-
-## 🏗️ Architecture
-
-### Why This Architecture?
-
-**Problem:** Traditional ML projects fail in production because they focus only on model accuracy, ignoring:
-- Data quality issues (missing values, schema changes)
-- Model drift and versioning
-- Deployment infrastructure
-- Input validation and security
-
-**Solution:** End-to-end MLOps pipeline with production-grade components.
-
-```mermaid
-flowchart TB
-    subgraph DATA["📥 DATA LAYER"]
-        direction TB
-        S3[("☁️ AWS S3\nRaw Data")]
-        S3 --> ING["📂 Ingestion\nDownload & Store"]
-        ING --> VAL["✅ Validation\nSchema Check"]
-        VAL --> PRE["⚙️ Preprocessing\nTransform & Split"]
-    end
-    
-    subgraph ML["🤖 ML LAYER"]
-        direction TB
-        PRE --> SMT["⚖️ SMOTE-Tomek\nClass Balancing"]
-        SMT --> TRN["🎯 Training\nXGBoost & CatBoost"]
-        TRN --> HPO["🔧 Optuna HPO\nStratified K-Fold"]
-        HPO --> EVL["📊 Evaluation\nMetrics & SHAP"]
-    end
-    
-    subgraph TRACK["📈 TRACKING LAYER"]
-        direction TB
-        EVL --> MLF["📋 MLflow\nExperiment Tracking"]
-        MLF --> DH["🗄️ DagsHub\nModel Registry"]
-    end
-    
-    subgraph DEPLOY["🚀 DEPLOYMENT LAYER"]
-        direction TB
-        DH --> API["⚡ FastAPI\nREST Service"]
-        API --> DCK["🐳 Docker\nContainer"]
-        DCK --> PROD["☁️ Production\nAWS/Render"]
-    end
-    
-    DATA --> ML --> TRACK --> DEPLOY
-    
-    style DATA fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
-    style ML fill:#fff3e0,stroke:#f57c00,stroke-width:2px
-    style TRACK fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
-    style DEPLOY fill:#fce4ec,stroke:#c2185b,stroke-width:2px
-```
-
----
-
-## 🛠️ Tech Stack (And Why)
-
-### ML Models
-
-**Primary: XGBoost**
-- ✅ **Fast Inference:** 47ms vs 180ms (CatBoost) or 200ms+ (Deep Learning)
-- ✅ **Handles Imbalanced Data:** Built-in support for weighted classes
-- ✅ **Explainable:** Feature importance helps banks understand fraud decisions
-
-**Why not CatBoost?** 4x slower inference (not suitable for real-time)
-**Why not Neural Networks?** Overkill for tabular data, harder to explain to auditors
-
-### Class Imbalance Handling
-
-**SMOTE-Tomek** (Hybrid Resampling)
-- ✅ **Better than SMOTE alone:** Cleans noisy synthetic samples
-- ✅ **Better than class weights:** More robust precision
-- ⚠️ **Critical:** Applied **ONLY** to training data (avoids data leakage)
-
-### MLOps Stack
-
-| Component | Technology | Why? |
-|-----------|------------|------|
-| **Pipeline** | DVC | Caching, reproducibility, version control |
-| **Tracking** | MLflow + DagsHub | Free experiment tracking + model registry |
-| **API** | FastAPI | Fast, modern, async support |
-| **Validation** | Pydantic | Type-safe input validation |
-| **Containerization** | Docker | Consistent deployment |
-| **Rate Limiting** | SlowAPI | Prevent API abuse (20 req/min) |
-
-## 🔥 Production Features
-
-**Security & Reliability Built-In:**
-- ✅ **Input Validation** (Pydantic) - Blocks invalid/malicious data
-- ✅ **Rate Limiting** (20 req/min) - Prevents API abuse
-- ✅ **Health Checks** - Returns 503 if model broken (K8s/Docker friendly)
-- ✅ **Model Versioning** - Track which model made each prediction
-- ✅ **Fail Loudly** - No silent failures (missing threshold = crash, not defaults)
-
-> **Why this matters:** Most ML projects fail in production due to missing validation, security, and monitoring. FraudGuard includes these from day one.
-
----
-
-## 🚀 Quick Start
-
-### Option 1: 5-Minute Demo (Pre-Trained Model)
-
-**For:** Recruiters, quick testing
-**No Training Required!**
+Use Python 3.9-3.11 for the locked dependency set.
 
 ```bash
-# 1. Clone
-git clone https://github.com/JavithNaseem-J/FraudGuard.git
-cd FraudGuard
-
-# 2. Install
-pip install -r requirements.lock
-
-# 3. Run API
-uvicorn app:app --reload --port 8080
-
-# 4. Test
-curl http://localhost:8080/health
-# Visit: http://localhost:8080
+python -m pip install -r requirements.lock
+python -m pip install -e .
+pytest -q -p no:cacheprovider
 ```
 
-### Option 2: Full Pipeline (Complete MLOps Experience)
-
-**For:** Understanding the full workflow
-**Requires:** AWS credentials, ~30 minutes
+Validate the active transaction data contract:
 
 ```bash
-# 1. Setup
-git clone https://github.com/JavithNaseem-J/FraudGuard.git
-cd FraudGuard
-
-# 2. Install
-pip install -r requirements.lock
-
-# 3. Configure AWS
-# Windows PowerShell:
-$env:AWS_PROFILE = "your-profile"
-$env:AWS_REGION = "us-east-1"
-
-# Linux/Mac:
-export AWS_PROFILE=your-profile
-
-# 4. Configure MLflow
-$env:MLFLOW_TRACKING_USERNAME = "your-dagshub-username"
-$env:MLFLOW_TRACKING_PASSWORD = "your-dagshub-token"
-
-# 5. Run Pipeline (automated script sets PYTHONPATH)
-# Windows:
-.\run_pipeline.ps1
-
-# Linux/Mac:
-chmod +x run_pipeline.sh
-./run_pipeline.sh
-
-# 6. Start API
-uvicorn app:app --reload --port 8080
+python scripts/transaction_data_contract.py
 ```
 
-**DVC Caching:** If training fails, just fix the error and run the pipeline script again - it resumes where it stopped!
-
----
-
-## 📁 Project Structure
-
-```
-FraudGuard/
-├── app.py                      # FastAPI production API
-├── dvc.yaml                    # Pipeline definition
-├── Dockerfile                  # Container config
-├── run_pipeline.ps1            # Windows pipeline runner (sets PYTHONPATH)
-├── run_pipeline.sh             # Linux/Mac pipeline runner
-│
-├── config_file/
-│   ├── config.yaml             # Artifact paths
-│   ├── params.yaml             # Hyperparameters
-│   └── schema.yaml             # Data schema
-│
-├── src/FraudGuard/
-│   ├── components/             # Pipeline stages (DVC entry points)
-│   │   ├── ingestion.py        # Download from S3
-│   │   ├── validation.py       # Schema validation
-│   │   ├── preprocess.py       # Feature engineering + SMOTE
-│   │   ├── training.py         # Model training + HPO
-│   │   └── evaluation.py       # Metrics + SHAP plots
-│   │
-│   ├── pipeline/
-│   │   └── inference_pipeline.py  # Production inference
-│   │
-│   └── utils/
-│       ├── helpers.py          # Utility functions
-│       └── logging.py          # Custom logger
-│
-├── scripts/                    # Optional helper scripts
-│   └── validate_fixes.py       # Validate production fixes
-│
-├── templates/                  # HTML UI
-├── tests/
-│   └── test_core.py            # Unit tests
-│
-└── artifacts/                  # Generated outputs (DVC tracked)
-    ├── ingestion/              # Raw data
-    ├── transform/              # Processed data + preprocessors
-    ├── trainer/                # Trained models
-    └── evaluation/             # Metrics & plots
-```
-
----
-
-## 🐳 Docker Deployment
-
-### Production Checklist
+Validate a local transaction model package:
 
 ```bash
-# 1. Verify artifacts
-ls -lh artifacts/trainer/model.joblib           # Should be ~4MB
-
-# 2. Run tests
-pytest tests/test_core.py -v
-
-# 3. Check API locally
-uvicorn app:app --port 8000 &
-curl http://localhost:8000/health               # Should return 200
-
-# 4. Build Docker image
-docker build -t fraudguard .
-
-# 5. Run container
-docker run -p 8080:8080 \
-  -e AWS_PROFILE=your-profile \
-  fraudguard
+python scripts/publish_model_release.py --artifact-root artifacts/benchmark/transaction_data/candidate --release-id local-check --local-only
 ```
 
-### Deployment Options
+Run deployment preflight:
 
-#### **Option 1: Render (Easiest)**
-- ✅ Free tier available
-- ✅ Auto-deploy from GitHub
-- ✅ HTTPS out-of-the-box
-- ⚠️ Cold starts on free tier
+```bash
+python scripts/provider_predeploy.py
+```
 
-#### **Option 2: AWS ECS**
-- ✅ No cold starts
-- ✅ Auto-scaling
-- ⚠️ More complex setup
+## Cloud Deployment
 
-#### **Option 3: Kubernetes**
-- ✅ Production-grade
-- ✅ Health checks work out-of-box
-- ⚠️ Requires DevOps knowledge
+Render reads `render.yaml`. Required protected values include:
 
----
+- `FRAUDGUARD_API_KEY`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `ARTIFACT_STORAGE_BUCKET`
+- `TRANSACTION_ARTIFACT_RELEASE_ID`
+- `UPSTASH_REDIS_REST_URL`
+- `UPSTASH_REDIS_REST_TOKEN`
 
+GitHub Actions runs clean-checkout tests, compile checks, OpenSpec validation, predeploy validation, container build, and a protected Render deploy hook.
 
+## API
 
-## 📄 License
+Health endpoints:
 
-This project is licensed under the [MIT License](LICENSE).
+- `GET /live`
+- `GET /ready`
+- `GET /health`
+
+Production prediction endpoint:
+
+- `POST /predict/transactions`
+
+Protected endpoints require either:
+
+```text
+x-api-key: <FRAUDGUARD_API_KEY>
+```
+
+or:
+
+```text
+Authorization: Bearer <FRAUDGUARD_API_KEY>
+```
+
+The legacy `/predict` endpoint is available only when `FRAUD_MODEL_MODE=baseline` is explicitly selected for local historical demos.
+
+## Dataset Notes
+
+The active transaction workflow expects local files such as:
+
+- `data/train_transaction.csv`
+- `data/train_identity.csv`
+- `data/test_transaction.csv`
+- `data/test_identity.csv`
+
+Raw transaction data and model binaries are intentionally not committed. The active registry does not require the retired legacy CSV.
+
+## Limits
+
+- Scores are model scores, not calibrated financial risk.
+- The current evidence uses internal labeled splits, not public test labels.
+- Free-tier Render can sleep and cold-start.
+- API-key auth is sufficient for a protected demo, not multi-user enterprise identity.
+- A real enterprise rollout still needs key rotation, operator workflows, alerting, backup policy, access reviews, and paid uptime choices.

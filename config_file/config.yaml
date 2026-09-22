@@ -1,39 +1,16 @@
 artifacts_root: artifacts
 
-ingestion:
-  root_dir: artifacts/ingestion
-  bucket: fraudguard
-  region: us-east-1
-  data_path: Fraud-data.csv
-  download_data: artifacts/ingestion/Fraud-data.csv
+transaction_data:
+  root_dir: artifacts/benchmark/transaction_data
+  train_transaction_path: data/train_transaction.csv
+  train_identity_path: data/train_identity.csv
+  public_test_transaction_path: data/test_transaction.csv
+  public_test_identity_path: data/test_identity.csv
+  target_column: isFraud
+  join_key: TransactionID
+  candidate_artifact_root: artifacts/benchmark/transaction_data/candidate
 
-validation:
-  root_dir: artifacts/validation
-  unzip_file: artifacts/ingestion/Fraud-data.csv
-  status_file: artifacts/validation/status.json
-
-transform:
-  root_dir: artifacts/transform
-  data_path: artifacts/ingestion/Fraud-data.csv
-  file_status: artifacts/validation/status.json
-  preprocessor_path: artifacts/transform/preprocess/preprocessor.pkl
-  label_encoder: artifacts/transform/preprocess/label_encoders.pkl
-
-trainer:
-  root_dir: artifacts/trainer
-  train_path: artifacts/transform/split/train.csv
-  test_path: artifacts/transform/split/test.csv
-  train_preprocess: artifacts/transform/process/train_processed.npy
-  test_preprocess: artifacts/transform/process/test_processed.npy
-  model_name: model.joblib
-
-evaluation:
-  root_dir: artifacts/evaluation
-  test_path: artifacts/transform/split/test.csv
-  preprocess_path: artifacts/transform/preprocess/preprocessor.pkl
-  model_path: artifacts/trainer/model.joblib
-  metrics_path: artifacts/evaluation/metrics.json
-  cm_path: artifacts/evaluation/cm.png
-  roc_path: artifacts/evaluation/roc.png
+historical_baseline:
+  note: "Legacy single-CSV baseline metrics are preserved in documentation only and are not an active production dependency."
 
 
