@@ -500,9 +500,7 @@ async def predict(request: Request, transaction: TransactionInput):
         raise HTTPException(status_code=500, detail="Internal server error") from error
 
 
-@app.post("/predict/transactions")
-async def predict_transaction_batch(request: Request, payload: TransactionBatchInput):
-    require_api_key(request)
+async def _score_transaction_batch(request: Request, payload: TransactionBatchInput):
     app_settings = getattr(request.app.state, "settings", settings)
     if not app_settings.transaction_candidate_enabled:
         raise HTTPException(
@@ -596,6 +594,19 @@ async def predict_transaction_batch(request: Request, payload: TransactionBatchI
             error,
         )
         raise HTTPException(status_code=500, detail="Internal server error") from error
+
+
+@app.post("/predict/transactions")
+async def predict_transaction_batch(request: Request, payload: TransactionBatchInput):
+    require_api_key(request)
+    return await _score_transaction_batch(request, payload)
+
+
+@app.post("/ui/predict/transactions")
+async def predict_transaction_batch_from_console(
+    request: Request, payload: TransactionBatchInput
+):
+    return await _score_transaction_batch(request, payload)
 
 
 @app.post("/feedback")

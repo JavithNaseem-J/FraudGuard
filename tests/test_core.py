@@ -641,6 +641,10 @@ def test_transaction_candidate_endpoint_is_feature_flagged_and_batch_safe(tmp_pa
             json={"rows": [{**row, "unexpected_feature": "ignored"}]},
         )
         schema_response = client.get("/schema/transactions")
+        ui_response = client.post(
+            "/ui/predict/transactions",
+            json={"rows": [{**row, "unexpected_feature": "ignored"}]},
+        )
 
     assert response.status_code == 200
     body = response.json()
@@ -654,6 +658,36 @@ def test_transaction_candidate_endpoint_is_feature_flagged_and_batch_safe(tmp_pa
     assert schema["model_mode"] == "transaction_candidate"
     assert schema["feature_names"] == list(X.columns)
     assert schema["feature_count"] == len(X.columns)
+    assert ui_response.status_code == 200
+    assert ui_response.json()["row_count"] == 1
+
+
+def test_transaction_console_endpoint_does_not_require_browser_api_key(tmp_path):
+    _, X, _ = write_artifacts(tmp_path / "trainer")
+    write_candidate_artifacts(tmp_path / "candidate")
+    row = X.iloc[0].to_dict()
+    candidate_settings = local_settings(
+        tmp_path,
+        model_mode="transaction_candidate",
+        auth_required=True,
+        api_key="server-secret",
+    )
+
+    with TestClient(app) as client:
+        app.state.settings = candidate_settings
+        app.state.transaction_candidate = TransactionCandidatePipeline(
+            candidate_settings.transaction_candidate_artifact_root
+        )
+        app.state.persistence = SupabasePersistence(candidate_settings)
+        app.state.rate_limiter = CloudRateLimiter(candidate_settings)
+
+        public_missing_key = client.post("/predict/transactions", json={"rows": [row]})
+        console_response = client.post("/ui/predict/transactions", json={"rows": [row]})
+
+    assert public_missing_key.status_code == 401
+    assert public_missing_key.json()["detail"] == "API key required"
+    assert console_response.status_code == 200
+    assert console_response.json()["row_count"] == 1
 
 
 def test_home_page_targets_transaction_batch_console():
@@ -662,7 +696,11 @@ def test_home_page_targets_transaction_batch_console():
 
     assert response.status_code == 200
     assert "Transaction risk console" in response.text
+    assert "/ui/predict/transactions" in response.text
     assert "/predict/transactions" in response.text
+    assert "FRAUDGUARD_API_KEY" not in response.text
+    assert "x-api-key" not in response.text
+    assert "sessionStorage" not in response.text
     assert 'action="/predict"' not in response.text
 
 

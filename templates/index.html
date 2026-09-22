@@ -577,8 +577,8 @@
             </nav>
 
             <div class="rail-footer">
-                <span>Active endpoint</span>
-                <strong>POST /predict/transactions</strong>
+                <span>Console endpoint</span>
+                <strong>POST /ui/predict/transactions</strong>
             </div>
         </aside>
 
@@ -675,18 +675,12 @@
                             </div>
                         </div>
                         <div class="panel-body">
-                            <div class="split-fields">
-                                <div class="field">
-                                    <label for="apiKeyInput">API key <span>session storage only</span></label>
-                                    <input id="apiKeyInput" type="password" autocomplete="off" placeholder="Paste FRAUDGUARD_API_KEY">
-                                </div>
-                                <div class="field">
-                                    <label for="inputMode">Input format <span id="schemaHint">schema loading</span></label>
-                                    <select id="inputMode">
-                                        <option value="json">JSON rows</option>
-                                        <option value="csv">CSV rows</option>
-                                    </select>
-                                </div>
+                            <div class="field">
+                                <label for="inputMode">Input format <span id="schemaHint">schema loading</span></label>
+                                <select id="inputMode">
+                                    <option value="json">JSON rows</option>
+                                    <option value="csv">CSV rows</option>
+                                </select>
                             </div>
 
                             <div class="field">
@@ -700,7 +694,7 @@
                             </div>
                             <div id="errorMessage" class="error"></div>
                             <div class="notice">
-                                This is an operator console for controlled environments. The browser never receives server secrets; paste the API key only for local or protected deployment testing.
+                                This operator console uses a same-origin backend route. The service API key stays on the server and is never requested by the browser.
                             </div>
                         </div>
                     </section>
@@ -741,7 +735,7 @@
                             <div class="detail-row"><span>Release ID</span><span id="releaseId">--</span></div>
                             <div class="detail-row"><span>Model name</span><span id="modelName">--</span></div>
                             <div class="detail-row"><span>Schema warnings</span><span id="schemaRiskCount">--</span></div>
-                            <div class="detail-row"><span>Endpoint</span><span>/predict/transactions</span></div>
+                            <div class="detail-row"><span>Console endpoint</span><span>/ui/predict/transactions</span></div>
                         </div>
                     </section>
 
@@ -773,7 +767,6 @@
         };
 
         const nodes = {
-            apiKeyInput: document.getElementById("apiKeyInput"),
             inputMode: document.getElementById("inputMode"),
             payloadInput: document.getElementById("payloadInput"),
             predictButton: document.getElementById("predictButton"),
@@ -823,10 +816,6 @@
         boot();
 
         async function boot() {
-            nodes.apiKeyInput.value = sessionStorage.getItem("fraudguard_api_key") || "";
-            nodes.apiKeyInput.addEventListener("input", () => {
-                sessionStorage.setItem("fraudguard_api_key", nodes.apiKeyInput.value.trim());
-            });
             nodes.predictButton.addEventListener("click", scoreTransactions);
             nodes.sampleButton.addEventListener("click", loadSample);
             nodes.csvButton.addEventListener("click", loadCsvExample);
@@ -901,13 +890,9 @@
                 if (rows.length === 0) throw new Error("Add at least one transaction row.");
                 if (rows.length > limit) throw new Error(`Batch row count exceeds limit: ${limit}`);
 
-                const headers = {"Content-Type": "application/json"};
-                const apiKey = nodes.apiKeyInput.value.trim();
-                if (apiKey) headers["x-api-key"] = apiKey;
-
-                const response = await fetch("/predict/transactions", {
+                const response = await fetch("/ui/predict/transactions", {
                     method: "POST",
-                    headers,
+                    headers: {"Content-Type": "application/json"},
                     body: JSON.stringify({rows}),
                 });
                 if (!response.ok) throw new Error(await readError(response));
