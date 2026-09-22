@@ -63,9 +63,6 @@ jobs:
       - name: Compile imports
         run: python -m compileall app.py src scripts
 
-      - name: OpenSpec validation
-        run: openspec validate --all --strict --no-interactive
-
   backend-unit-tests:
     name: Backend unit tests
     runs-on: ubuntu-latest

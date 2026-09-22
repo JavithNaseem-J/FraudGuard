@@ -70,7 +70,7 @@ Render reads `render.yaml`. Required protected values include:
 - `UPSTASH_REDIS_REST_URL`
 - `UPSTASH_REDIS_REST_TOKEN`
 
-GitHub Actions runs clean-checkout tests, compile checks, OpenSpec validation, predeploy validation, container build, and a protected Render deploy hook.
+GitHub Actions runs clean-checkout tests, compile checks, predeploy validation, container build, and a protected Render deploy hook.
 
 ## API
 

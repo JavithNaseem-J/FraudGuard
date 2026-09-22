@@ -1,5 +1,0 @@
-schema: spec-driven
-created: 2026-09-21
-goal: Run a larger transaction-data benchmark, export a non-serving candidate
-  model package, validate feature/schema risks, and decide whether promotion is
-  justified.

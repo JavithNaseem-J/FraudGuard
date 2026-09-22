@@ -1,4 +1,0 @@
-schema: spec-driven
-created: 2026-09-20
-goal: Make FraudGuard technically valid and evidence-backed from data split
-  through production inference.

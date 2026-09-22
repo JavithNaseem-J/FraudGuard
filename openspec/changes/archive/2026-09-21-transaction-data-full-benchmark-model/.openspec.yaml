@@ -1,5 +1,0 @@
-schema: spec-driven
-created: 2026-09-21
-goal: Improve transaction benchmark predictive performance with a leakage-safe
-  stronger tabular modeling pipeline and cost-weighted model selection before
-  any serving promotion.

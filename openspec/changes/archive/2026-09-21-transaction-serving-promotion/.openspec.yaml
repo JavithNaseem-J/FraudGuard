@@ -1,5 +1,0 @@
-schema: spec-driven
-created: 2026-09-21
-goal: Safely promote the transaction-data benchmark candidate toward serving by
-  adding a feature-flagged candidate loading path, batch transaction prediction
-  contract, fallback behavior, and production deployment checks.

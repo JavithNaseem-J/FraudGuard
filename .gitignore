@@ -188,6 +188,7 @@ cython_debug/
 .vscode/
 .idea/
 graphify-out/
+openspec/
 
 # Local services and runtime output
 logs/
