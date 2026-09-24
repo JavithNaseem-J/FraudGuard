@@ -52,7 +52,7 @@ class AppSettings:
 def load_settings() -> AppSettings:
     project_root = Path(__file__).resolve().parents[3]
     model_mode = os.getenv("FRAUD_MODEL_MODE", "transaction_candidate").strip().lower()
-    if model_mode not in {"baseline", "transaction_candidate"}:
+    if model_mode != "transaction_candidate":
         model_mode = "transaction_candidate"
     return AppSettings(
         app_env=os.getenv("APP_ENV", "local"),

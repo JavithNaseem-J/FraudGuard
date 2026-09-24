@@ -6,8 +6,11 @@ import numpy as np
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from app import app
 from FraudGuard.cloud.artifacts import (
@@ -18,9 +21,6 @@ from FraudGuard.cloud.artifacts import (
 from FraudGuard.cloud.persistence import SupabasePersistence
 from FraudGuard.cloud.rate_limit import CloudRateLimiter
 from FraudGuard.cloud.settings import AppSettings
-from FraudGuard.components.evaluation import Evaluation
-from FraudGuard.components.preprocess import Transform
-from FraudGuard.components.training import build_preprocessor, select_f1_threshold
 from FraudGuard.data.dataset_registry import (
     default_dataset_registry,
     validate_dataset_paths,
@@ -35,15 +35,10 @@ from FraudGuard.data.transaction_benchmark import (
     split_labeled_transaction_data,
     validate_transaction_data_contract,
 )
-from FraudGuard.entity.config_entity import (
-    DataTransformationConfig,
-    ModelEvaluationConfig,
-)
 from FraudGuard.monitoring.evidently_reports import (
     generate_delayed_label_performance_report,
     generate_unlabeled_drift_report,
 )
-from FraudGuard.pipeline.inference_pipeline import PredictionPipeline
 from FraudGuard.pipeline.transaction_candidate_pipeline import (
     TransactionCandidatePipeline,
 )
@@ -88,17 +83,26 @@ def make_transactions(rows: int = 40) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
-def transformation_config(tmp_path: Path, data_path: Path) -> DataTransformationConfig:
-    status_path = tmp_path / "validation.json"
-    status_path.write_text('{"validation_status": true}', encoding="utf-8")
-    return DataTransformationConfig(
-        root_dir=tmp_path / "transform",
-        data_path=data_path,
-        validation_status_path=status_path,
-        target_column="Fraudulent",
-        columns_to_drop=["Transaction_ID", "User_ID"],
-        test_size=0.25,
-        random_state=42,
+def build_test_preprocessor(
+    categorical_columns: list[str], numeric_columns: list[str]
+) -> ColumnTransformer:
+    numeric_pipeline = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", StandardScaler()),
+        ]
+    )
+    categorical_pipeline = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="most_frequent")),
+            ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
+        ]
+    )
+    return ColumnTransformer(
+        transformers=[
+            ("categorical", categorical_pipeline, categorical_columns),
+            ("numeric", numeric_pipeline, numeric_columns),
+        ]
     )
 
 
@@ -110,7 +114,7 @@ def fitted_pipeline() -> tuple[Pipeline, pd.DataFrame, pd.Series]:
         steps=[
             (
                 "preprocessor",
-                build_preprocessor(CATEGORICAL_FEATURES, NUMERIC_FEATURES),
+                build_test_preprocessor(CATEGORICAL_FEATURES, NUMERIC_FEATURES),
             ),
             (
                 "classifier",
@@ -124,39 +128,9 @@ def fitted_pipeline() -> tuple[Pipeline, pd.DataFrame, pd.Series]:
     return pipeline, X, y
 
 
-def write_artifacts(root: Path) -> tuple[Pipeline, pd.DataFrame, pd.Series]:
-    pipeline, X, y = fitted_pipeline()
-    root.mkdir(parents=True, exist_ok=True)
-    joblib.dump(pipeline, root / "model.joblib")
-    threshold = {
-        "optimal_threshold": 0.4,
-        "objective": "out_of_fold_f1",
-        "precision": 0.5,
-        "recall": 0.5,
-        "f1": 0.5,
-    }
-    metadata = {
-        "artifact_schema_version": 2,
-        "version": "test",
-        "model_name": "LogisticRegression",
-        "feature_names": FEATURES,
-        "categorical_columns": CATEGORICAL_FEATURES,
-        "numeric_columns": NUMERIC_FEATURES,
-        "target_column": "Fraudulent",
-        "optimal_threshold": 0.4,
-        "baseline_cv_score": float(y.mean()),
-        "score_is_calibrated": False,
-    }
-    (root / "optimal_threshold.json").write_text(
-        json.dumps(threshold), encoding="utf-8"
-    )
-    (root / "model_version.json").write_text(json.dumps(metadata), encoding="utf-8")
-    return pipeline, X, y
-
-
 def local_settings(
     tmp_path: Path,
-    model_mode: str = "baseline",
+    model_mode: str = "transaction_candidate",
     auth_required: bool = False,
     api_key: str = "",
     max_request_bytes: int = 1_048_576,
@@ -229,7 +203,11 @@ def write_candidate_artifacts(root: Path) -> tuple[Pipeline, pd.DataFrame, pd.Se
     return pipeline, X, y
 
 
-def make_ieee_cis_files(tmp_path: Path) -> TransactionBenchmarkConfig:
+def make_transaction_data_files(
+    tmp_path: Path,
+    *,
+    join_identity: bool = False,
+) -> TransactionBenchmarkConfig:
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     transaction_rows = []
@@ -266,43 +244,13 @@ def make_ieee_cis_files(tmp_path: Path) -> TransactionBenchmarkConfig:
         test_size=0.25,
         validation_size=0.25,
         random_state=7,
+        join_identity=join_identity,
     )
-
-
-def test_split_is_deduplicated_deterministic_and_stratified(tmp_path):
-    source = make_transactions(40)
-    source = pd.concat([source, source.iloc[[0]]], ignore_index=True)
-    data_path = tmp_path / "transactions.csv"
-    source.to_csv(data_path, index=False)
-    config = transformation_config(tmp_path, data_path)
-
-    first_train, first_test = Transform(config).train_test_splitting()
-    second_train, second_test = Transform(config).train_test_splitting()
-
-    pd.testing.assert_frame_equal(first_train, second_train)
-    pd.testing.assert_frame_equal(first_test, second_test)
-    assert len(first_train) + len(first_test) == 40
-    assert not first_train.duplicated().any()
-    assert not first_test.duplicated().any()
-    assert first_train.merge(first_test, how="inner").empty
-    assert abs(first_train.Fraudulent.mean() - first_test.Fraudulent.mean()) < 0.08
-
-
-def test_split_refuses_failed_validation(tmp_path):
-    data_path = tmp_path / "transactions.csv"
-    make_transactions().to_csv(data_path, index=False)
-    config = transformation_config(tmp_path, data_path)
-    config.validation_status_path.write_text(
-        '{"validation_status": false}', encoding="utf-8"
-    )
-
-    with pytest.raises(ValueError, match="validation failed"):
-        Transform(config).train_test_splitting()
 
 
 def test_preprocessor_handles_missing_and_unknown_categories():
     train = make_transactions(20).drop(columns=["Transaction_ID", "User_ID"])
-    preprocessor = build_preprocessor(CATEGORICAL_FEATURES, NUMERIC_FEATURES)
+    preprocessor = build_test_preprocessor(CATEGORICAL_FEATURES, NUMERIC_FEATURES)
     preprocessor.fit(train[FEATURES])
 
     unseen = train.iloc[[0]][FEATURES].copy()
@@ -314,14 +262,6 @@ def test_preprocessor_handles_missing_and_unknown_categories():
 
     assert transformed.shape[0] == 1
     assert np.isfinite(transformed_values).all()
-
-
-def test_threshold_selection_uses_supplied_training_scores():
-    result = select_f1_threshold(np.array([0, 0, 1, 1]), np.array([0.1, 0.4, 0.6, 0.9]))
-
-    assert result["objective"] == "out_of_fold_f1"
-    assert 0 <= result["optimal_threshold"] <= 1
-    assert result["f1"] == pytest.approx(1.0)
 
 
 def test_cost_weighted_threshold_uses_configured_costs():
@@ -336,74 +276,6 @@ def test_cost_weighted_threshold_uses_configured_costs():
     assert result["false_positive_cost"] == 1.0
     assert result["false_negative_cost"] == 20.0
     assert result["average_cost"] == pytest.approx(0.0)
-
-
-def test_evaluation_applies_stored_threshold_and_reports_imbalanced_metrics(tmp_path):
-    artifact_root = tmp_path / "trainer"
-    pipeline, X, y = write_artifacts(artifact_root)
-    test_path = tmp_path / "test.csv"
-    X.assign(Fraudulent=y.to_numpy()).to_csv(test_path, index=False)
-    evaluation_root = tmp_path / "evaluation"
-    config = ModelEvaluationConfig(
-        root_dir=evaluation_root,
-        test_path=test_path,
-        model_path=artifact_root / "model.joblib",
-        threshold_path=artifact_root / "optimal_threshold.json",
-        model_version_path=artifact_root / "model_version.json",
-        metrics_path=evaluation_root / "metrics.json",
-        target_column="Fraudulent",
-        cm_path=evaluation_root / "cm.png",
-        roc_path=evaluation_root / "roc.png",
-        pr_path=evaluation_root / "pr.png",
-    )
-
-    metrics = Evaluation(config).evaluation()
-    expected = (pipeline.predict_proba(X)[:, 1] >= 0.4).astype(int)
-
-    assert metrics["threshold"] == 0.4
-    assert metrics["positive_support"] == int(y.sum())
-    assert metrics["confusion_matrix"] == (
-        pd.crosstab(
-            pd.Categorical(y, categories=[0, 1]),
-            pd.Categorical(expected, categories=[0, 1]),
-            dropna=False,
-        )
-        .to_numpy()
-        .tolist()
-    )
-    assert "average_precision" in metrics
-    assert "brier_score" in metrics
-    assert metrics["cost_weighted"]["false_negative_cost"] == 20.0
-    assert (evaluation_root / "pr.png").exists()
-
-
-def test_inference_contract_handles_unknowns_and_rejects_missing_features(tmp_path):
-    artifact_root = tmp_path / "trainer"
-    _, X, _ = write_artifacts(artifact_root)
-    predictor = PredictionPipeline(artifact_root=artifact_root)
-    request = X.iloc[[0]].copy()
-    request.loc[:, "Location"] = "unseen-location"
-
-    result = predictor.predict(request)
-
-    assert result["fraud_status"] in {"Yes", "No"}
-    assert result["threshold_used"] == 0.4
-    assert result["model_version"] == "test"
-    assert result["score_is_calibrated"] is False
-
-    with pytest.raises(ValueError, match="Missing required features"):
-        predictor.predict(request.drop(columns=["Location"]))
-
-
-def test_inference_rejects_mismatched_threshold_artifact(tmp_path):
-    artifact_root = tmp_path / "trainer"
-    write_artifacts(artifact_root)
-    (artifact_root / "optimal_threshold.json").write_text(
-        '{"optimal_threshold": 0.9}', encoding="utf-8"
-    )
-
-    with pytest.raises(ValueError, match="does not match"):
-        PredictionPipeline(artifact_root=artifact_root)
 
 
 def test_transaction_candidate_pipeline_validates_schema_and_orders_features(tmp_path):
@@ -500,80 +372,61 @@ def test_cloud_settings_fallbacks_dataset_registry_and_rate_limit(tmp_path):
 
 
 def test_prediction_api_returns_safe_json_contract(tmp_path):
-    artifact_root = tmp_path / "trainer"
-    _, X, _ = write_artifacts(artifact_root)
-    request = X.iloc[0].to_dict()
-    payload = {
-        "transaction_type": request["Transaction_Type"],
-        "device_used": request["Device_Used"],
-        "location": request["Location"],
-        "payment_method": request["Payment_Method"],
-        "transaction_amount": request["Transaction_Amount"],
-        "time_of_transaction": request["Time_of_Transaction"],
-        "previous_fraudulent_transactions": int(
-            request["Previous_Fraudulent_Transactions"]
-        ),
-        "account_age": int(request["Account_Age"]),
-        "number_of_transactions_last_24h": int(
-            request["Number_of_Transactions_Last_24H"]
-        ),
-    }
+    _, X, _ = write_candidate_artifacts(tmp_path / "candidate")
+    payload = {"rows": [X.iloc[0].to_dict()]}
+    candidate_settings = local_settings(tmp_path, model_mode="transaction_candidate")
 
-    baseline_settings = local_settings(tmp_path, model_mode="baseline")
     with TestClient(app) as client:
-        app.state.settings = local_settings(tmp_path, model_mode="baseline")
-        app.state.predictor = PredictionPipeline(artifact_root=artifact_root)
-        app.state.persistence = SupabasePersistence(baseline_settings)
-        app.state.rate_limiter = CloudRateLimiter(baseline_settings)
-        response = client.post("/predict", json=payload)
+        app.state.settings = candidate_settings
+        app.state.transaction_candidate = TransactionCandidatePipeline(
+            candidate_settings.transaction_candidate_artifact_root
+        )
+        app.state.persistence = SupabasePersistence(candidate_settings)
+        app.state.rate_limiter = CloudRateLimiter(candidate_settings)
+        response = client.post("/predict/transactions", json=payload)
 
     assert response.status_code == 200
     body = response.json()
-    assert "prediction_id" in body
-    assert body["fraud_status"] in {"Yes", "No"}
-    assert "data=" not in body["results_url"]
+    assert body["model_mode"] == "transaction_candidate"
+    assert body["row_count"] == 1
+    assert "prediction_id" in body["results"][0]
+    assert body["results"][0]["fraud_status"] in {"Yes", "No"}
+    assert "results_url" not in body
     assert body["persistence"] == "local_noop"
 
 
 def test_prediction_api_requires_valid_api_key_when_enabled(tmp_path):
-    artifact_root = tmp_path / "trainer"
-    _, X, _ = write_artifacts(artifact_root)
-    request = X.iloc[0].to_dict()
-    payload = {
-        "transaction_type": request["Transaction_Type"],
-        "device_used": request["Device_Used"],
-        "location": request["Location"],
-        "payment_method": request["Payment_Method"],
-        "transaction_amount": request["Transaction_Amount"],
-        "time_of_transaction": request["Time_of_Transaction"],
-        "previous_fraudulent_transactions": int(
-            request["Previous_Fraudulent_Transactions"]
-        ),
-        "account_age": int(request["Account_Age"]),
-        "number_of_transactions_last_24h": int(
-            request["Number_of_Transactions_Last_24H"]
-        ),
-    }
+    _, X, _ = write_candidate_artifacts(tmp_path / "candidate")
+    payload = {"rows": [X.iloc[0].to_dict()]}
     secure_settings = local_settings(
-        tmp_path, auth_required=True, api_key="test-secret"
+        tmp_path,
+        model_mode="transaction_candidate",
+        auth_required=True,
+        api_key="test-secret",
     )
 
     with TestClient(app) as client:
         app.state.settings = secure_settings
-        app.state.predictor = PredictionPipeline(artifact_root=artifact_root)
+        app.state.transaction_candidate = TransactionCandidatePipeline(
+            secure_settings.transaction_candidate_artifact_root
+        )
         app.state.persistence = SupabasePersistence(secure_settings)
         app.state.rate_limiter = CloudRateLimiter(secure_settings)
 
         assert client.get("/ready").status_code == 200
-        missing = client.post("/predict", json=payload)
+        missing = client.post("/predict/transactions", json=payload)
         wrong = client.post(
-            "/predict", json=payload, headers={"x-api-key": "wrong-secret"}
+            "/predict/transactions",
+            json=payload,
+            headers={"x-api-key": "wrong-secret"},
         )
         valid = client.post(
-            "/predict", json=payload, headers={"x-api-key": "test-secret"}
+            "/predict/transactions",
+            json=payload,
+            headers={"x-api-key": "test-secret"},
         )
         bearer = client.post(
-            "/predict",
+            "/predict/transactions",
             json=payload,
             headers={"Authorization": "Bearer test-secret"},
         )
@@ -586,36 +439,23 @@ def test_prediction_api_requires_valid_api_key_when_enabled(tmp_path):
 
 def test_request_size_guard_rejects_large_payload_before_prediction(tmp_path):
     settings = local_settings(tmp_path, max_request_bytes=20)
-    payload = {
-        "transaction_type": "purchase",
-        "device_used": "mobile",
-        "location": "north",
-        "payment_method": "card",
-        "transaction_amount": 10.0,
-        "time_of_transaction": 1.0,
-        "previous_fraudulent_transactions": 0,
-        "account_age": 100,
-        "number_of_transactions_last_24h": 1,
-    }
+    payload = {"rows": [{"TransactionAmt": 10.0, "TransactionDT": 1}]}
 
     with TestClient(app) as client:
         app.state.settings = settings
         app.state.persistence = SupabasePersistence(settings)
-        response = client.post("/predict", json=payload)
+        response = client.post("/predict/transactions", json=payload)
 
     assert response.status_code == 413
     assert response.json()["max_request_bytes"] == 20
 
 
 def test_transaction_candidate_endpoint_is_feature_flagged_and_batch_safe(tmp_path):
-    artifact_root = tmp_path / "trainer"
-    _, X, _ = write_artifacts(artifact_root)
-    write_candidate_artifacts(tmp_path / "candidate")
+    _, X, _ = write_candidate_artifacts(tmp_path / "candidate")
     row = X.iloc[0].to_dict()
 
     with TestClient(app) as client:
         app.state.settings = local_settings(tmp_path)
-        app.state.predictor = PredictionPipeline(artifact_root=artifact_root)
         app.state.transaction_candidate = None
         app.state.persistence = SupabasePersistence(local_settings(tmp_path))
         app.state.rate_limiter = CloudRateLimiter(local_settings(tmp_path))
@@ -641,10 +481,6 @@ def test_transaction_candidate_endpoint_is_feature_flagged_and_batch_safe(tmp_pa
             json={"rows": [{**row, "unexpected_feature": "ignored"}]},
         )
         schema_response = client.get("/schema/transactions")
-        ui_response = client.post(
-            "/ui/predict/transactions",
-            json={"rows": [{**row, "unexpected_feature": "ignored"}]},
-        )
 
     assert response.status_code == 200
     body = response.json()
@@ -658,13 +494,12 @@ def test_transaction_candidate_endpoint_is_feature_flagged_and_batch_safe(tmp_pa
     assert schema["model_mode"] == "transaction_candidate"
     assert schema["feature_names"] == list(X.columns)
     assert schema["feature_count"] == len(X.columns)
-    assert ui_response.status_code == 200
-    assert ui_response.json()["row_count"] == 1
 
 
-def test_transaction_console_endpoint_does_not_require_browser_api_key(tmp_path):
-    _, X, _ = write_artifacts(tmp_path / "trainer")
-    write_candidate_artifacts(tmp_path / "candidate")
+def test_transaction_batch_endpoint_requires_server_api_key_when_auth_is_enabled(
+    tmp_path,
+):
+    _, X, _ = write_candidate_artifacts(tmp_path / "candidate")
     row = X.iloc[0].to_dict()
     candidate_settings = local_settings(
         tmp_path,
@@ -682,26 +517,37 @@ def test_transaction_console_endpoint_does_not_require_browser_api_key(tmp_path)
         app.state.rate_limiter = CloudRateLimiter(candidate_settings)
 
         public_missing_key = client.post("/predict/transactions", json={"rows": [row]})
-        console_response = client.post("/ui/predict/transactions", json={"rows": [row]})
+        public_with_key = client.post(
+            "/predict/transactions",
+            json={"rows": [row]},
+            headers={"x-api-key": "server-secret"},
+        )
+        removed_ui_route = client.post("/ui/predict/transactions", json={"rows": [row]})
 
     assert public_missing_key.status_code == 401
     assert public_missing_key.json()["detail"] == "API key required"
-    assert console_response.status_code == 200
-    assert console_response.json()["row_count"] == 1
+    assert public_with_key.status_code == 200
+    assert public_with_key.json()["row_count"] == 1
+    assert removed_ui_route.status_code == 404
 
 
-def test_home_page_targets_transaction_batch_console():
+def test_service_index_reports_backend_api_surface():
     with TestClient(app) as client:
         response = client.get("/")
 
     assert response.status_code == 200
-    assert "Transaction risk console" in response.text
-    assert "/ui/predict/transactions" in response.text
-    assert "/predict/transactions" in response.text
+    body = response.json()
+    assert body["service"] == "FraudGuard API"
+    assert body["status"] == "ok"
+    assert body["documentation"] == "/docs"
+    assert body["health"] == {
+        "liveness": "/live",
+        "readiness": "/ready",
+        "version": "/version",
+    }
+    assert body["endpoints"]["transaction_batch_prediction"] == "/predict/transactions"
+    assert "/ui/predict/transactions" not in response.text
     assert "FRAUDGUARD_API_KEY" not in response.text
-    assert "x-api-key" not in response.text
-    assert "sessionStorage" not in response.text
-    assert 'action="/predict"' not in response.text
 
 
 def test_version_endpoint_reports_non_sensitive_build_metadata(monkeypatch):
@@ -722,13 +568,11 @@ def test_version_endpoint_reports_non_sensitive_build_metadata(monkeypatch):
 
 
 def test_transaction_mode_readiness_does_not_require_baseline_artifacts(tmp_path):
-    _, X, _ = write_artifacts(tmp_path / "trainer")
     write_candidate_artifacts(tmp_path / "candidate")
     candidate_settings = local_settings(tmp_path, model_mode="transaction_candidate")
 
     with TestClient(app) as client:
         app.state.settings = candidate_settings
-        app.state.predictor = None
         app.state.transaction_candidate = TransactionCandidatePipeline(
             candidate_settings.transaction_candidate_artifact_root
         )
@@ -736,36 +580,16 @@ def test_transaction_mode_readiness_does_not_require_baseline_artifacts(tmp_path
         app.state.rate_limiter = CloudRateLimiter(candidate_settings)
 
         ready = client.get("/ready")
-        legacy_response = client.post(
-            "/predict",
-            json={
-                "transaction_type": X.iloc[0]["Transaction_Type"],
-                "device_used": X.iloc[0]["Device_Used"],
-                "location": X.iloc[0]["Location"],
-                "payment_method": X.iloc[0]["Payment_Method"],
-                "transaction_amount": X.iloc[0]["Transaction_Amount"],
-                "time_of_transaction": X.iloc[0]["Time_of_Transaction"],
-                "previous_fraudulent_transactions": int(
-                    X.iloc[0]["Previous_Fraudulent_Transactions"]
-                ),
-                "account_age": int(X.iloc[0]["Account_Age"]),
-                "number_of_transactions_last_24h": int(
-                    X.iloc[0]["Number_of_Transactions_Last_24H"]
-                ),
-            },
-        )
+        legacy_response = client.post("/predict", json={})
 
     assert ready.status_code == 200
     body = ready.json()
-    assert body["baseline_model_loaded"] is False
     assert body["candidate_model_loaded"] is True
-    assert legacy_response.status_code == 503
+    assert legacy_response.status_code == 404
 
 
 def test_transaction_candidate_endpoint_enforces_batch_row_limit(tmp_path):
-    artifact_root = tmp_path / "trainer"
-    _, X, _ = write_artifacts(artifact_root)
-    write_candidate_artifacts(tmp_path / "candidate")
+    _, X, _ = write_candidate_artifacts(tmp_path / "candidate")
     row = X.iloc[0].to_dict()
     candidate_settings = local_settings(
         tmp_path, model_mode="transaction_candidate", max_batch_rows=1
@@ -773,7 +597,6 @@ def test_transaction_candidate_endpoint_enforces_batch_row_limit(tmp_path):
 
     with TestClient(app) as client:
         app.state.settings = candidate_settings
-        app.state.predictor = PredictionPipeline(artifact_root=artifact_root)
         app.state.transaction_candidate = TransactionCandidatePipeline(
             candidate_settings.transaction_candidate_artifact_root
         )
@@ -856,21 +679,33 @@ def test_monitoring_reports_handle_insufficient_and_delayed_labels(tmp_path):
     assert metrics["precision"] == pytest.approx(1.0)
 
 
-def test_ieee_cis_contract_and_identity_left_join(tmp_path):
-    config = make_ieee_cis_files(tmp_path)
+def test_transaction_data_contract_defaults_to_transaction_only(tmp_path):
+    config = make_transaction_data_files(tmp_path)
     status = validate_transaction_data_contract(config)
     prepared = load_labeled_transaction_data(config)
 
     assert status["ready"] is True
     assert status["public_test_used_for_metrics"] is False
+    assert status["identity_coverage_in_sample"] is None
     assert status["class_counts"]["0"] == 15
     assert status["class_counts"]["1"] == 5
+    assert len(prepared) == 20
+    assert "id_01" not in prepared.columns
+
+
+def test_identity_join_remains_available_as_optional_side_table(tmp_path):
+    config = make_transaction_data_files(tmp_path, join_identity=True)
+    status = validate_transaction_data_contract(config)
+    prepared = load_labeled_transaction_data(config)
+
+    assert status["ready"] is True
+    assert status["identity_coverage_in_sample"] == pytest.approx(3 / 20)
     assert len(prepared) == 20
     assert prepared["id_01"].isna().sum() == 17
 
 
-def test_ieee_cis_splits_are_deterministic_and_internal(tmp_path):
-    config = make_ieee_cis_files(tmp_path)
+def test_transaction_data_splits_are_deterministic_and_internal(tmp_path):
+    config = make_transaction_data_files(tmp_path)
     prepared = load_labeled_transaction_data(config)
     first = split_labeled_transaction_data(prepared, config)
     second = split_labeled_transaction_data(prepared, config)
@@ -885,8 +720,8 @@ def test_ieee_cis_splits_are_deterministic_and_internal(tmp_path):
     assert Path(report["report_path"]).exists()
 
 
-def test_ieee_cis_smoke_benchmark_reports_cost_weighted_metrics(tmp_path):
-    config = make_ieee_cis_files(tmp_path)
+def test_transaction_data_smoke_benchmark_reports_cost_weighted_metrics(tmp_path):
+    config = make_transaction_data_files(tmp_path)
     report = run_transaction_smoke_benchmark(config)
     metrics = report["smoke_benchmark"]["metrics"]
 
@@ -900,7 +735,7 @@ def test_ieee_cis_smoke_benchmark_reports_cost_weighted_metrics(tmp_path):
 
 def test_transaction_strong_benchmark_compares_against_smoke_baseline(tmp_path):
     pytest.importorskip("lightgbm")
-    config = make_ieee_cis_files(tmp_path)
+    config = make_transaction_data_files(tmp_path)
     serving_artifact = tmp_path / "artifacts" / "trainer" / "model.joblib"
     serving_artifact.parent.mkdir(parents=True, exist_ok=True)
     serving_artifact.write_bytes(b"current-serving-model")

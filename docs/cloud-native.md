@@ -13,7 +13,7 @@ FraudGuard is configured for a production-shaped free-tier deployment using Rend
 ## Required Environment Variables
 
 - `APP_ENV`: `local`, `render`, `staging`, or `production`.
-- `FRAUD_MODEL_MODE`: `transaction_candidate` for production transaction serving. Use `baseline` only for explicit local historical demos.
+- `FRAUD_MODEL_MODE`: `transaction_candidate` for transaction serving.
 - `TRANSACTION_ARTIFACT_RELEASE_ID`: immutable release ID selected for serving.
 - `ARTIFACT_STORAGE_BUCKET`: private Supabase Storage bucket, for example `fraudguard-model-releases`.
 - `ARTIFACT_CACHE_ROOT`: writable runtime cache. Render default: `/app/runtime/model-releases`.
@@ -29,6 +29,15 @@ FraudGuard is configured for a production-shaped free-tier deployment using Rend
 - `FRAUDGUARD_API_KEY`: server-side API key for protected prediction and feedback endpoints.
 - `MAX_REQUEST_BYTES`: maximum JSON request body size. Default: `1048576`.
 - `MAX_BATCH_ROWS`: maximum rows accepted by `/predict/transactions`. Default: `100`.
+
+## Dependency Authority
+
+`pyproject.toml` defines package metadata. `requirements.lock` is the install lock for local setup, CI, and Docker builds. Dependency updates must refresh the lockfile in the same change so deployment uses the same package set that CI verified:
+
+```bash
+poetry lock
+poetry export -f requirements.txt --output requirements.lock --without-hashes
+```
 
 ## Supabase Setup
 
@@ -89,7 +98,7 @@ Prediction and feedback endpoints are protected when `AUTH_REQUIRED=true`:
 - `POST /predict/transactions`
 - `POST /feedback`
 
-The legacy `/predict` endpoint is disabled in production transaction mode. Health and readiness endpoints remain public so Render can monitor the service:
+The legacy `/predict` endpoint has been removed from the active API. Health and readiness endpoints remain public so Render can monitor the service:
 
 - `GET /live`
 - `GET /ready`
@@ -122,11 +131,11 @@ Langfuse is not part of this deployment because the system is tabular ML, not an
 The active benchmark registry expects user-downloaded transaction data:
 
 - `data/train_transaction.csv`
-- `data/train_identity.csv`
+- `data/train_identity.csv` when explicitly enabling future identity-side-table experiments
 - `data/test_transaction.csv` when available
 - `data/test_identity.csv` when available
 
-There is no public test target file. Benchmark metrics must come from internal labeled splits of `train_transaction.csv`. Raw transaction data stays local and must not be committed.
+The current serving candidate is transaction-only and trains from `data/train_transaction.csv`; identity side tables are deferred. There is no public test target file. Benchmark metrics must come from internal labeled splits of `train_transaction.csv`. Raw transaction data stays local and must not be committed.
 
 ## Free-Tier Limits
 

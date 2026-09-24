@@ -116,13 +116,13 @@ jobs:
             tests/test_core.py::test_transaction_candidate_endpoint_is_feature_flagged_and_batch_safe \
             tests/test_core.py::test_transaction_mode_readiness_does_not_require_baseline_artifacts \
             tests/test_core.py::test_transaction_candidate_endpoint_enforces_batch_row_limit \
-            tests/test_core.py::test_home_page_targets_transaction_batch_console
+            tests/test_core.py::test_service_index_reports_backend_api_surface
 
       - name: Fixture predeploy validation
         run: python scripts/provider_predeploy.py
 
-  frontend-checks:
-    name: Frontend install, typecheck, tests, and build
+  api-surface-checks:
+    name: Backend API surface checks
     runs-on: ubuntu-latest
     needs: backend-integration-tests
     steps:
@@ -136,54 +136,47 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.lock
 
-      - name: Install server-rendered frontend dependencies
+      - name: Install API dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.lock
           python -m pip install -e .
           python -m pip install pytest==8.4.2
-          if test -f package-lock.json; then
-            npm ci
-          else
-            echo "No Node lockfile found; frontend is served by FastAPI/Jinja templates."
-          fi
 
-      - name: Frontend typecheck
+      - name: Confirm server-rendered frontend is removed
         run: |
           python - <<'PY'
           from pathlib import Path
-          text = Path("templates/index.html").read_text(encoding="utf-8")
-          required = [
-              "Transaction risk console",
-              "/predict/transactions",
-              "/schema/transactions",
-              "sessionStorage",
-          ]
-          missing = [item for item in required if item not in text]
-          if missing:
-              raise SystemExit(f"frontend template missing required wiring: {missing}")
+
+          removed = [Path("templates/index.html"), Path("templates/result.html")]
+          present = [str(path) for path in removed if path.exists()]
+          if present:
+              raise SystemExit(f"removed frontend templates are still present: {present}")
           PY
 
-      - name: Frontend tests
-        run: python -m pytest -q -p no:cacheprovider tests/test_core.py::test_home_page_targets_transaction_batch_console
-
-      - name: Frontend production build
+      - name: API surface tests
         run: |
-          python -m compileall templates
-          echo "Server-rendered frontend is packaged into the production Docker image."
+          python -m pytest -q -p no:cacheprovider \
+            tests/test_core.py::test_service_index_reports_backend_api_surface \
+            tests/test_core.py::test_transaction_batch_endpoint_requires_server_api_key_when_auth_is_enabled
+
+      - name: API production import check
+        run: |
+          python -m compileall app.py src
+          echo "No server-rendered frontend is packaged; API only."
 
       - name: Browser smoke tests
         run: |
           if test -d tests/browser; then
             python -m pytest -q tests/browser
           else
-            echo "No browser smoke suite is present; container smoke verifies served HTML."
+            echo "No browser smoke suite is present; container smoke verifies served API."
           fi
 
   docker-production-image:
     name: Production Docker image and container smoke
     runs-on: ubuntu-latest
-    needs: frontend-checks
+    needs: api-surface-checks
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -200,7 +193,7 @@ jobs:
             --build-arg BUILD_TIME="${{ steps.metadata.outputs.build_time }}" \
             -t fraudguard-api:${GITHUB_SHA} .
 
-      - name: Start container and smoke test served API/frontend
+      - name: Start container and smoke test served API
         run: |
           set -euo pipefail
           container_name="fraudguard-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -250,7 +243,7 @@ jobs:
           assert version["commit_sha"] == expected_sha, version
 
           with urllib.request.urlopen("http://localhost:8010/", timeout=10) as response:
-              html = response.read().decode("utf-8")
-          assert "Transaction risk console" in html
-          assert "/predict/transactions" in html
+              service_index = json.loads(response.read().decode("utf-8"))
+          assert service_index["service"] == "FraudGuard API", service_index
+          assert service_index["endpoints"]["transaction_batch_prediction"] == "/predict/transactions", service_index
           PY

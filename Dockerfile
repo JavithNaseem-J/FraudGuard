@@ -32,8 +32,6 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 # Copy application and artifacts
 COPY src/ ./src/
-COPY config_file/ ./config_file/
-COPY templates/ ./templates/
 COPY app.py .
 
 # Set permissions

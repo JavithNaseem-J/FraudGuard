@@ -107,22 +107,6 @@ def main() -> int:
     if settings.max_batch_rows <= 0:
         failures.append("MAX_BATCH_ROWS must be positive")
 
-    if not settings.transaction_candidate_enabled:
-        print(f"MODEL_ARTIFACT_ROOT={settings.model_artifact_root}")
-        baseline_required = [
-            settings.model_artifact_root / "model.joblib",
-            settings.model_artifact_root / "optimal_threshold.json",
-            settings.model_artifact_root / "model_version.json",
-        ]
-        failures.extend(_check_files("local legacy baseline model", baseline_required))
-        if failures:
-            print("Predeploy check failed.")
-            for failure in failures:
-                print(f"- {failure}")
-            return 1
-        print("Predeploy check passed.")
-        return 0
-
     print(
         "TRANSACTION_CANDIDATE_ARTIFACT_ROOT="
         f"{settings.transaction_candidate_artifact_root}"

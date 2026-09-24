@@ -4,25 +4,19 @@ import os
 import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from pathlib import Path
 from secrets import compare_digest
 from typing import Any
 from uuid import uuid4
-
-import pandas as pd
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field, field_validator
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from FraudGuard import logger
 from FraudGuard.cloud.artifacts import ensure_transaction_release
 from FraudGuard.cloud.persistence import PredictionRecord, SupabasePersistence
 from FraudGuard.cloud.rate_limit import CloudRateLimiter
 from FraudGuard.cloud.settings import load_settings
-from FraudGuard.pipeline.inference_pipeline import PredictionPipeline
 from FraudGuard.pipeline.transaction_candidate_pipeline import (
     TransactionCandidatePipeline,
 )
@@ -34,17 +28,6 @@ STARTUP_BUILD_TIME = datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 def _safe_error_message(error: Exception) -> str:
     return error.__class__.__name__
-
-
-def _load_baseline_predictor(app: FastAPI) -> None:
-    app.state.predictor = PredictionPipeline(artifact_root=settings.model_artifact_root)
-    logger.info(
-        "Prediction artifacts loaded | model=%s | threshold=%.4f | persistence=%s | rate_limit=%s",
-        app.state.predictor.model_version.get("version", "unknown"),
-        app.state.predictor.optimal_threshold,
-        app.state.persistence.mode,
-        app.state.rate_limiter.mode,
-    )
 
 
 def _load_transaction_candidate(app: FastAPI) -> None:
@@ -87,14 +70,10 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.persistence = SupabasePersistence(settings)
     app.state.rate_limiter = CloudRateLimiter(settings)
-    app.state.predictor = None
     app.state.transaction_candidate = None
     app.state.readiness_error = None
     try:
-        if settings.transaction_candidate_enabled:
-            _load_transaction_candidate(app)
-        else:
-            _load_baseline_predictor(app)
+        _load_transaction_candidate(app)
     except Exception as error:
         app.state.readiness_error = _safe_error_message(error)
         logger.error(
@@ -112,32 +91,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-current_dir = Path(__file__).resolve().parent
-templates = Jinja2Templates(directory=str(current_dir / "templates"))
-
-static_dir = current_dir / "static"
-if static_dir.exists():
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
-
-
-class TransactionInput(BaseModel):
-    """Validated transaction input schema with constraints."""
-
-    transaction_type: str = Field(..., description="Type of transaction")
-    device_used: str = Field(..., description="Device used for transaction")
-    location: str = Field(..., min_length=2, max_length=100)
-    payment_method: str = Field(..., description="Payment method")
-    transaction_amount: float = Field(..., gt=0, le=1000000)
-    time_of_transaction: float = Field(..., ge=0, lt=24)
-    previous_fraudulent_transactions: int = Field(..., ge=0, le=100)
-    account_age: int = Field(..., ge=0, le=36500)
-    number_of_transactions_last_24h: int = Field(..., ge=0, le=1000)
-
-    @field_validator("transaction_amount")
-    @classmethod
-    def validate_amount(cls, value: float) -> float:
-        return round(value, 2)
-
 
 class FeedbackInput(BaseModel):
     prediction_id: str
@@ -150,7 +103,7 @@ class TransactionBatchInput(BaseModel):
     rows: list[dict[str, Any]] = Field(..., min_length=1, max_length=1000)
 
 
-PROTECTED_PATHS = {"/predict", "/predict/transactions", "/feedback"}
+PROTECTED_PATHS = {"/predict/transactions", "/feedback"}
 
 
 def client_key(request: Request) -> str:
@@ -160,24 +113,6 @@ def client_key(request: Request) -> str:
     if request.client:
         return request.client.host
     return "unknown"
-
-
-def input_to_frame(transaction: TransactionInput) -> pd.DataFrame:
-    return pd.DataFrame(
-        [
-            {
-                "Transaction_Type": transaction.transaction_type,
-                "Device_Used": transaction.device_used,
-                "Location": transaction.location,
-                "Payment_Method": transaction.payment_method,
-                "Transaction_Amount": transaction.transaction_amount,
-                "Time_of_Transaction": transaction.time_of_transaction,
-                "Previous_Fraudulent_Transactions": transaction.previous_fraudulent_transactions,
-                "Account_Age": transaction.account_age,
-                "Number_of_Transactions_Last_24H": transaction.number_of_transactions_last_24h,
-            }
-        ]
-    )
 
 
 def _extract_api_key(request: Request) -> str:
@@ -295,67 +230,34 @@ async def version():
 
 @app.get("/ready")
 async def readiness(request: Request):
-    predictor = getattr(request.app.state, "predictor", None)
     app_settings = getattr(request.app.state, "settings", settings)
     candidate = getattr(request.app.state, "transaction_candidate", None)
     readiness_error = getattr(request.app.state, "readiness_error", None)
-    if app_settings.transaction_candidate_enabled:
-        if candidate is None:
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "status": "not_ready",
-                    "model_mode": app_settings.model_mode,
-                    "baseline_model_loaded": predictor is not None,
-                    "candidate_model_loaded": False,
-                    "reason": readiness_error or "transaction artifacts unavailable",
-                },
-            )
-        candidate_metadata = candidate.readiness_metadata()
-        candidate_metadata["release_id"] = (
-            app_settings.rollback_release_id
-            or app_settings.transaction_artifact_release_id
-            or "local"
-        )
-        return {
-            "status": "ready",
-            "service": "FraudGuard API",
-            "model_mode": app_settings.model_mode,
-            "model_loaded": True,
-            "baseline_model_loaded": False,
-            "candidate_model_loaded": True,
-            "threshold": candidate.threshold,
-            "model_version": candidate.model_version,
-            "transaction_candidate": candidate_metadata,
-            "persistence": request.app.state.persistence.mode,
-            "rate_limit": request.app.state.rate_limiter.mode,
-        }
-
-    if predictor is None:
+    if candidate is None:
         raise HTTPException(
             status_code=503,
             detail={
                 "status": "not_ready",
                 "model_mode": app_settings.model_mode,
-                "baseline_model_loaded": False,
                 "candidate_model_loaded": candidate is not None,
-                "reason": readiness_error or "prediction artifacts unavailable",
+                "reason": readiness_error or "transaction artifacts unavailable",
             },
         )
 
-    candidate_metadata = (
-        candidate.readiness_metadata() if candidate is not None else None
+    candidate_metadata = candidate.readiness_metadata()
+    candidate_metadata["release_id"] = (
+        app_settings.rollback_release_id
+        or app_settings.transaction_artifact_release_id
+        or "local"
     )
-
     return {
         "status": "ready",
         "service": "FraudGuard API",
         "model_mode": app_settings.model_mode,
         "model_loaded": True,
-        "baseline_model_loaded": True,
-        "candidate_model_loaded": candidate is not None,
-        "threshold": predictor.optimal_threshold,
-        "model_version": predictor.model_version.get("version", "unknown"),
+        "candidate_model_loaded": True,
+        "threshold": candidate.threshold,
+        "model_version": candidate.model_version,
         "transaction_candidate": candidate_metadata,
         "persistence": request.app.state.persistence.mode,
         "rate_limit": request.app.state.rate_limiter.mode,
@@ -370,12 +272,6 @@ async def health_check(request: Request):
 @app.get("/schema/transactions")
 async def transaction_schema(request: Request):
     app_settings = getattr(request.app.state, "settings", settings)
-    if not app_settings.transaction_candidate_enabled:
-        raise HTTPException(
-            status_code=503,
-            detail="Transaction candidate serving is disabled",
-        )
-
     candidate = getattr(request.app.state, "transaction_candidate", None)
     if candidate is None:
         readiness_error = getattr(request.app.state, "readiness_error", None)
@@ -400,113 +296,30 @@ async def transaction_schema(request: Request):
     }
 
 
-@app.get("/api/placeholder/{width}/{height}")
-async def placeholder_image(width: int, height: int):
-    return JSONResponse(content={"width": width, "height": height})
-
-
 @app.get("/")
-async def home_page(request: Request):
-    return templates.TemplateResponse(
-        name="index.html",
-        context={"request": request},
-    )
-
-
-@app.post("/predict")
-async def predict(request: Request, transaction: TransactionInput):
-    require_api_key(request)
+async def service_index(request: Request):
     app_settings = getattr(request.app.state, "settings", settings)
-    if app_settings.transaction_candidate_enabled:
-        raise HTTPException(
-            status_code=503,
-            detail="The legacy single-transaction endpoint is disabled in transaction production mode",
-        )
-    limiter_result = request.app.state.rate_limiter.check(client_key(request))
-    if not limiter_result.allowed:
-        raise HTTPException(status_code=429, detail="Rate limit exceeded")
-
-    predictor = getattr(request.app.state, "predictor", None)
-    if predictor is None:
-        raise HTTPException(status_code=503, detail="Prediction model is not ready")
-
-    started = time.perf_counter()
-    prediction_id = str(uuid4())
-    try:
-        result = predictor.predict(input_to_frame(transaction))
-        latency_ms = (time.perf_counter() - started) * 1000
-        request_id = request.state.request_id
-
-        record = PredictionRecord(
-            prediction_id=prediction_id,
-            request_id=request_id,
-            model_version=result["model_version"],
-            model_mode="baseline",
-            score=result["fraud_score"],
-            threshold=result["threshold_used"],
-            decision=result["fraud_status"],
-            score_is_calibrated=result["score_is_calibrated"],
-            latency_ms=latency_ms,
-            metadata={
-                "confidence": result["confidence"],
-                "model_mode": "baseline",
-                "rate_limit_mode": limiter_result.mode,
-            },
-        )
-        persisted = request.app.state.persistence.persist_prediction(record)
-
-        logger.info(
-            "prediction_id=%s request_id=%s model_mode=baseline model_version=%s "
-            "decision=%s score=%.4f threshold=%.4f latency_ms=%.2f persisted=%s",
-            prediction_id,
-            request_id,
-            result["model_version"],
-            result["fraud_status"],
-            result["fraud_score"],
-            result["threshold_used"],
-            latency_ms,
-            persisted,
-        )
-
-        return {
-            "prediction_id": prediction_id,
-            "request_id": request_id,
-            "model_mode": "baseline",
-            "fraud_status": result["fraud_status"],
-            "fraud_score": result["fraud_score"],
-            "fraud_probability": result["fraud_probability"],
-            "threshold_used": result["threshold_used"],
-            "confidence": result["confidence"],
-            "model_version": result["model_version"],
-            "score_is_calibrated": result["score_is_calibrated"],
-            "latency_ms": latency_ms,
-            "persistence": request.app.state.persistence.mode,
-            "rate_limit": limiter_result.mode,
-            "results_url": (
-                f"/results?prediction_id={prediction_id}"
-                f"&fraud_status={result['fraud_status']}"
-                f"&fraud_probability={result['fraud_probability']}"
-                f"&threshold_used={result['threshold_used']}"
-                f"&confidence={result['confidence']}"
-                f"&model_version={result['model_version']}"
-                f"&score_is_calibrated={result['score_is_calibrated']}"
-            ),
-        }
-    except ValueError as error:
-        logger.warning("Validation error: %s", error)
-        raise HTTPException(status_code=422, detail=str(error)) from error
-    except Exception as error:
-        logger.error("Prediction error: %s", error)
-        raise HTTPException(status_code=500, detail="Internal server error") from error
+    return {
+        "service": "FraudGuard API",
+        "status": "ok",
+        "model_mode": app_settings.model_mode,
+        "authentication": "required" if app_settings.auth_required else "disabled",
+        "documentation": "/docs",
+        "health": {
+            "liveness": "/live",
+            "readiness": "/ready",
+            "version": "/version",
+        },
+        "endpoints": {
+            "transaction_schema": "/schema/transactions",
+            "transaction_batch_prediction": "/predict/transactions",
+            "feedback": "/feedback",
+        },
+    }
 
 
 async def _score_transaction_batch(request: Request, payload: TransactionBatchInput):
     app_settings = getattr(request.app.state, "settings", settings)
-    if not app_settings.transaction_candidate_enabled:
-        raise HTTPException(
-            status_code=503,
-            detail="Transaction candidate serving is disabled",
-        )
     if len(payload.rows) > app_settings.max_batch_rows:
         raise HTTPException(
             status_code=422,
@@ -602,13 +415,6 @@ async def predict_transaction_batch(request: Request, payload: TransactionBatchI
     return await _score_transaction_batch(request, payload)
 
 
-@app.post("/ui/predict/transactions")
-async def predict_transaction_batch_from_console(
-    request: Request, payload: TransactionBatchInput
-):
-    return await _score_transaction_batch(request, payload)
-
-
 @app.post("/feedback")
 async def submit_feedback(request: Request, feedback: FeedbackInput):
     require_api_key(request)
@@ -624,35 +430,6 @@ async def submit_feedback(request: Request, feedback: FeedbackInput):
         "persisted": persisted,
         "persistence": request.app.state.persistence.mode,
     }
-
-
-@app.get("/results")
-async def show_results(
-    request: Request,
-    prediction_id: str | None = None,
-    fraud_status: str | None = None,
-    fraud_probability: float | None = None,
-    threshold_used: float | None = None,
-    confidence: str | None = None,
-    model_version: str | None = None,
-    score_is_calibrated: bool | None = None,
-):
-    if fraud_status is None or fraud_probability is None:
-        return RedirectResponse(url="/")
-
-    return templates.TemplateResponse(
-        name="result.html",
-        context={
-            "request": request,
-            "prediction_id": prediction_id or "unknown",
-            "fraud_status": fraud_status,
-            "fraud_probability": float(fraud_probability),
-            "threshold_used": threshold_used,
-            "confidence": confidence or "Medium",
-            "model_version": model_version or "unknown",
-            "score_is_calibrated": bool(score_is_calibrated),
-        },
-    )
 
 
 if __name__ == "__main__":

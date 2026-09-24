@@ -2,11 +2,11 @@
 
 FraudGuard is a tabular transaction-fraud project with a FastAPI serving API, transaction-data benchmark workflow, immutable model release handling, and free-tier cloud deployment configuration for Render, Supabase, Upstash Redis, and Evidently OSS.
 
-Production serving now uses the transaction model path. The older single-CSV baseline is retained only as historical comparison evidence and is not required for production startup, CI, DVC, Render, or predeploy checks.
+Production serving uses the transaction model path. The older single-CSV baseline is retained only as historical comparison evidence and is not required for production startup, CI, DVC, Render, or predeploy checks.
 
 ## Production Path
 
-1. Train or select a transaction model package from local transaction data.
+1. Train or select a transaction-only model package from local transaction data.
 2. Validate the package contract and write a manifest with file sizes and SHA-256 checksums.
 3. Publish the immutable release to private Supabase Storage.
 4. Configure Render with `FRAUD_MODEL_MODE=transaction_candidate` and `TRANSACTION_ARTIFACT_RELEASE_ID`.
@@ -16,23 +16,31 @@ Production serving now uses the transaction model path. The older single-CSV bas
 
 ## Current Transaction Model Evidence
 
-The latest bounded transaction-data candidate run used 75,000 labeled rows and evaluated on a 15,000-row internal labeled split:
+The latest bounded transaction-only candidate run used 75,000 labeled rows from `train_transaction.csv` and evaluated on a 15,000-row internal labeled split. Identity side-table fields are deferred for a future model version.
 
 | Metric | Value |
 | --- | ---: |
-| Average precision / PR-AUC | 0.7192 |
-| ROC-AUC | 0.9409 |
-| Precision at threshold | 0.3033 |
-| Recall at threshold | 0.7921 |
-| F1 at threshold | 0.4387 |
-| Brier score | 0.0209 |
-| Cost-weighted average loss | 0.1610 |
+| Average precision / PR-AUC | 0.7090 |
+| ROC-AUC | 0.9401 |
+| Precision at threshold | 0.2265 |
+| Recall at threshold | 0.8218 |
+| F1 at threshold | 0.3551 |
+| Brier score | 0.0227 |
+| Cost-weighted average loss | 0.1716 |
+| Feature count | 392 |
 
 There is no public test target in this workspace, so public test performance is not claimed.
 
 ## Local Setup
 
 Use Python 3.9-3.11 for the locked dependency set.
+
+`pyproject.toml` is the package metadata source. `requirements.lock` is the committed install lock used by local setup, CI, and Docker builds. When dependencies change, regenerate and commit `requirements.lock` in the same change:
+
+```bash
+poetry lock
+poetry export -f requirements.txt --output requirements.lock --without-hashes
+```
 
 ```bash
 python -m pip install -r requirements.lock
@@ -96,7 +104,7 @@ or:
 Authorization: Bearer <FRAUDGUARD_API_KEY>
 ```
 
-The legacy `/predict` endpoint is available only when `FRAUD_MODEL_MODE=baseline` is explicitly selected for local historical demos.
+The legacy `/predict` endpoint has been removed from the active production API. Use `POST /predict/transactions`.
 
 ## Dataset Notes
 
