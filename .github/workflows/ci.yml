@@ -13,6 +13,7 @@ permissions:
 env:
   PYTHON_VERSION: "3.11"
   NODE_VERSION: "20"
+  UV_VERSION: "0.11.15"
   APP_ENV: ci
 
 jobs:
@@ -36,21 +37,28 @@ jobs:
 
       - name: Verify dependency locks are reproducible
         run: |
-          python -m pip install uv
+          python -m pip install "uv==${UV_VERSION}"
           uv pip compile pyproject.toml --universal --python-version 3.11 -o requirements.lock
           uv pip compile pyproject.toml --extra dev --universal --python-version 3.11 -o requirements-dev.lock
           git diff --exit-code -- requirements.lock requirements-dev.lock
 
-      - name: Backend format, lint, and type checks
+      - name: Check backend formatting
+        run: black --check app.py src tests scripts
+
+      - name: Lint backend
+        run: flake8 app.py src tests scripts --max-line-length=120 --extend-ignore=E203,W503
+
+      - name: Run backend static type analysis
         run: |
-          black --check app.py src tests scripts
-          flake8 app.py src tests scripts --max-line-length=120 --extend-ignore=E203,W503
           python -m mypy app.py src/FraudGuard/cloud src/FraudGuard/pipeline \
             --ignore-missing-imports --no-strict-optional \
             --allow-untyped-defs --check-untyped-defs
 
-      - name: Backend unit and integration tests
-        run: python -m pytest -p no:cacheprovider
+      - name: Run backend unit tests
+        run: python -m pytest -p no:cacheprovider -m "not integration"
+
+      - name: Run backend integration tests
+        run: python -m pytest -p no:cacheprovider -m integration
 
       - name: Compile imports
         run: python -m compileall app.py src scripts
@@ -80,7 +88,11 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Validate frontend behavior and samples
+      - name: Typecheck frontend
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Run frontend tests
         working-directory: frontend
         run: npm test
 
@@ -88,7 +100,7 @@ jobs:
         working-directory: frontend
         run: npm audit --omit=dev --audit-level=moderate
 
-      - name: Typecheck and build frontend
+      - name: Build production frontend
         working-directory: frontend
         run: npm run build
 
@@ -137,12 +149,18 @@ jobs:
             -e TRANSACTION_ARTIFACT_ROOT=/tmp/fraudguard-ci-model \
             fraudguard:${GITHUB_SHA}
 
+          ready=0
           for attempt in $(seq 1 30); do
             if curl --fail --silent http://localhost:8010/ready > /tmp/ready.json; then
+              ready=1
               break
             fi
             sleep 2
           done
+          if [ "$ready" -ne 1 ]; then
+            echo "Container did not become ready within 60 seconds." >&2
+            exit 1
+          fi
 
           python - <<'PY'
           import json

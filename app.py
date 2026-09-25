@@ -29,6 +29,7 @@ from FraudGuard.pipeline.transaction_pipeline import TransactionPipeline
 
 settings = load_settings()
 STARTUP_BUILD_TIME = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+BUILD_TIME_FILE = Path(__file__).resolve().parent / "build-time.txt"
 FRONTEND_DIST_DIR = Path(__file__).resolve().parent / "frontend" / "dist"
 FRONTEND_INDEX = FRONTEND_DIST_DIR / "index.html"
 FRONTEND_ASSETS_DIR = FRONTEND_DIST_DIR / "assets"
@@ -52,6 +53,17 @@ def _release_id(app_settings: AppSettings, manifest: Any | None) -> str:
     if manifest is not None:
         return str(manifest.release_id)
     return app_settings.transaction_artifact_release_id or "local"
+
+
+def _build_time() -> str:
+    configured = os.getenv("APP_BUILD_TIME") or os.getenv("BUILD_TIME")
+    if configured and configured.lower() != "unknown":
+        return configured
+    try:
+        persisted = BUILD_TIME_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        persisted = ""
+    return persisted or STARTUP_BUILD_TIME
 
 
 def _load_transaction_model(app: FastAPI) -> None:
@@ -192,9 +204,7 @@ async def version():
             or os.getenv("BUILD_COMMIT_SHA")
             or "unknown"
         ),
-        "build_time": (
-            os.getenv("APP_BUILD_TIME") or os.getenv("BUILD_TIME") or STARTUP_BUILD_TIME
-        ),
+        "build_time": _build_time(),
     }
 
 

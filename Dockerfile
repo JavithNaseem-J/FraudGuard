@@ -12,7 +12,8 @@ RUN npm run build
 FROM python:3.11-slim
 
 ARG BUILD_COMMIT_SHA=unknown
-ARG BUILD_TIME=unknown
+ARG BUILD_TIME
+ARG UV_VERSION=0.11.15
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -34,7 +35,7 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     libc-dev \
-    && pip install uv \
+    && pip install "uv==${UV_VERSION}" \
     && uv pip install --system -r requirements.lock \
     && apt-get purge -y --auto-remove gcc g++ libc-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -47,6 +48,14 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 COPY src/ ./src/
 COPY app.py .
 COPY --from=frontend-builder /frontend/dist ./frontend/dist
+
+# Persist an immutable UTC image-build timestamp after the source copy so a
+# new commit cannot reuse a timestamp from an older cached image layer.
+RUN if [ -n "${BUILD_TIME}" ]; then \
+      printf '%s\n' "${BUILD_TIME}"; \
+    else \
+      date -u +%Y-%m-%dT%H:%M:%SZ; \
+    fi > /app/build-time.txt
 
 # Set permissions
 RUN mkdir -p /app/runtime/model-releases \

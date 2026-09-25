@@ -88,22 +88,47 @@ jobs:
   deploy-render:
     name: Deploy exact SHA to Render
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: resolve-commit
     environment: production
     env:
       EXACT_SHA: ${{ needs.resolve-commit.outputs.exact_sha }}
     steps:
+      - name: Initialize deployment verification report
+        run: |
+          mkdir -p deployment-verification
+          cat > deployment-verification/summary.json <<JSON
+          {
+            "commit_sha": "$EXACT_SHA",
+            "status": "started",
+            "verified": false
+          }
+          JSON
+
       - name: Checkout exact deployed commit
         uses: actions/checkout@v4
         with:
           ref: ${{ env.EXACT_SHA }}
+          fetch-depth: 1
+
+      - name: Verify deployment checkout
+        run: |
+          set -euo pipefail
+          checked_out_sha="$(git rev-parse HEAD)"
+          if ! printf '%s' "$checked_out_sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "Deployment checkout is not a full Git SHA: $checked_out_sha" >&2
+            exit 1
+          fi
+          if [ "$checked_out_sha" != "$EXACT_SHA" ]; then
+            echo "Deployment checkout mismatch: expected $EXACT_SHA, got $checked_out_sha" >&2
+            exit 1
+          fi
 
       - name: Trigger Render deploy hook for exact SHA
         env:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
           set -euo pipefail
-          mkdir -p deployment-verification
           if [ -z "${RENDER_DEPLOY_HOOK_URL:-}" ]; then
             echo "RENDER_DEPLOY_HOOK_URL secret is required." >&2
             exit 1
@@ -141,7 +166,19 @@ jobs:
           {
             "commit_sha": "$EXPECTED_COMMIT_SHA",
             "public_base_url": "$PUBLIC_BASE_URL",
+            "status": "verified",
             "verified": true
+          }
+          JSON
+
+      - name: Record unsuccessful deployment verification
+        if: failure()
+        run: |
+          cat > deployment-verification/summary.json <<JSON
+          {
+            "commit_sha": "$EXACT_SHA",
+            "status": "failed",
+            "verified": false
           }
           JSON
 

@@ -6,6 +6,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 
 
 def _sample_value(feature: str):
@@ -58,11 +59,24 @@ def main() -> int:
 
     if expected_commit_sha:
         observed_commit_sha = "unknown"
+        observed_build_time = "unknown"
         for _attempt in range(30):
             try:
                 status, body = _request(f"{base_url}/version")
                 observed_commit_sha = str(body.get("commit_sha", "unknown"))
-                if status == 200 and observed_commit_sha == expected_commit_sha:
+                observed_build_time = str(body.get("build_time", "unknown"))
+                try:
+                    parsed_build_time = datetime.fromisoformat(
+                        observed_build_time.replace("Z", "+00:00")
+                    )
+                    valid_build_time = parsed_build_time.tzinfo is not None
+                except ValueError:
+                    valid_build_time = False
+                if (
+                    status == 200
+                    and observed_commit_sha == expected_commit_sha
+                    and valid_build_time
+                ):
                     print(f"Render version verified: {expected_commit_sha}")
                     break
             except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
@@ -72,6 +86,7 @@ def main() -> int:
             print(
                 "Render version verification failed: "
                 f"expected {expected_commit_sha}, got {observed_commit_sha}; "
+                f"build_time={observed_build_time}; "
                 f"last_error={last_error}"
             )
             return 1

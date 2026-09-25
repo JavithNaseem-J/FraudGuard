@@ -1,7 +1,9 @@
+import asyncio
 import json
 from dataclasses import replace
 from pathlib import Path
 
+import app as app_module
 import joblib
 import numpy as np
 import pandas as pd
@@ -194,6 +196,24 @@ def test_cost_weighted_threshold_uses_configured_costs():
     assert result["average_cost"] == pytest.approx(0.0)
 
 
+def test_version_endpoint_exposes_only_build_identity(monkeypatch, tmp_path):
+    commit_sha = "a" * 40
+    build_time = "2026-09-25T07:30:00Z"
+    build_time_file = tmp_path / "build-time.txt"
+    build_time_file.write_text(build_time, encoding="utf-8")
+    monkeypatch.setattr(app_module, "BUILD_TIME_FILE", build_time_file)
+    monkeypatch.delenv("RENDER_GIT_COMMIT", raising=False)
+    monkeypatch.delenv("APP_COMMIT_SHA", raising=False)
+    monkeypatch.setenv("BUILD_COMMIT_SHA", commit_sha)
+    monkeypatch.delenv("APP_BUILD_TIME", raising=False)
+    monkeypatch.setenv("BUILD_TIME", "unknown")
+
+    assert asyncio.run(app_module.version()) == {
+        "commit_sha": commit_sha,
+        "build_time": build_time,
+    }
+
+
 def test_transaction_pipeline_validates_and_orders_features(tmp_path):
     frame = write_model_artifacts(tmp_path / "model")
     model = TransactionPipeline(tmp_path / "model")
@@ -242,6 +262,7 @@ def test_local_rate_limit_applies_before_prediction(tmp_path):
     assert not limiter.check("client").allowed
 
 
+@pytest.mark.integration
 def test_anonymous_prediction_persists_only_sanitized_fields(tmp_path):
     with TestClient(app) as client:
         frame = configure_test_app(tmp_path)
@@ -268,6 +289,7 @@ def test_anonymous_prediction_persists_only_sanitized_fields(tmp_path):
     }
 
 
+@pytest.mark.integration
 def test_prediction_guardrails_cover_rate_bytes_and_rows(tmp_path):
     with TestClient(app) as client:
         frame = configure_test_app(
@@ -292,6 +314,7 @@ def test_prediction_guardrails_cover_rate_bytes_and_rows(tmp_path):
     assert oversized.status_code == 413
 
 
+@pytest.mark.integration
 def test_readiness_liveness_and_removed_enterprise_routes(tmp_path):
     with TestClient(app) as client:
         configure_test_app(tmp_path)
@@ -309,6 +332,7 @@ def test_readiness_liveness_and_removed_enterprise_routes(tmp_path):
     assert "authentication" not in api
 
 
+@pytest.mark.integration
 def test_unavailable_model_fails_readiness_but_not_liveness(tmp_path):
     with TestClient(app) as client:
         app.state.settings = local_settings(tmp_path)
@@ -354,6 +378,7 @@ def test_dashboard_is_bounded_aggregated_and_redacted():
     assert all(len(row["prediction_id"]) <= 8 for row in snapshot["recent_flagged"])
 
 
+@pytest.mark.integration
 def test_dashboard_local_fallback_is_explicit(tmp_path):
     with TestClient(app) as client:
         configure_test_app(tmp_path)

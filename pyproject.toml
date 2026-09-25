@@ -39,6 +39,9 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-q"
 pythonpath = ["src", "."]
+markers = [
+  "integration: exercises the FastAPI application across component boundaries",
+]
 
 [tool.black]
 line-length = 88
