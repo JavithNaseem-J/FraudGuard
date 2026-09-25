@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import joblib
@@ -10,25 +11,19 @@ from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from app import app
+from app import _dashboard_snapshot, app
 from FraudGuard.cloud.artifacts import (
     build_transaction_release_manifest,
     validate_release_directory,
     write_manifest,
 )
-from FraudGuard.cloud.persistence import SupabasePersistence
+from FraudGuard.cloud.persistence import PredictionRecord, SupabasePersistence
 from FraudGuard.cloud.rate_limit import CloudRateLimiter
-from FraudGuard.cloud.settings import AppSettings
-from FraudGuard.data.dataset_registry import (
-    default_dataset_registry,
-    validate_dataset_paths,
-)
-from FraudGuard.data.dataset_registry import find_registered_dataset
+from FraudGuard.cloud.settings import AppSettings, load_settings
 from FraudGuard.data.transaction_benchmark import (
+    COST_SENSITIVITY_RATIOS,
     TransactionBenchmarkConfig,
-    load_labeled_transaction_data,
     prepare_transaction_benchmark,
     run_transaction_smoke_benchmark,
     run_transaction_strong_benchmark,
@@ -36,232 +31,156 @@ from FraudGuard.data.transaction_benchmark import (
     validate_transaction_data_contract,
 )
 from FraudGuard.monitoring.evidently_reports import (
-    generate_delayed_label_performance_report,
-    generate_unlabeled_drift_report,
+    APPROVED_MONITORING_COLUMNS,
+    generate_output_monitoring_report,
+    sanitize_monitoring_frame,
 )
-from FraudGuard.pipeline.transaction_candidate_pipeline import (
-    TransactionCandidatePipeline,
-)
+from FraudGuard.pipeline.transaction_pipeline import TransactionPipeline
 from FraudGuard.utils.costs import select_cost_weighted_threshold
-from FraudGuard.utils.helpers import init_mlflow_tracking, load_json, save_json
+
+FEATURES = ["TransactionDT", "TransactionAmt", "card1"]
 
 
-FEATURES = [
-    "Transaction_Amount",
-    "Time_of_Transaction",
-    "Previous_Fraudulent_Transactions",
-    "Account_Age",
-    "Number_of_Transactions_Last_24H",
-    "Transaction_Type",
-    "Device_Used",
-    "Location",
-    "Payment_Method",
-]
-NUMERIC_FEATURES = FEATURES[:5]
-CATEGORICAL_FEATURES = FEATURES[5:]
-
-
-def make_transactions(rows: int = 40) -> pd.DataFrame:
-    records = []
-    for index in range(rows):
-        records.append(
-            {
-                "Transaction_ID": f"txn-{index}",
-                "User_ID": 1000 + index % 9,
-                "Transaction_Amount": float(index + 1) if index != 3 else np.nan,
-                "Time_of_Transaction": float(index % 24),
-                "Previous_Fraudulent_Transactions": index % 4,
-                "Account_Age": 10 + index,
-                "Number_of_Transactions_Last_24H": 1 + index % 12,
-                "Transaction_Type": ["purchase", "transfer"][index % 2],
-                "Device_Used": ["mobile", "desktop"][index % 2],
-                "Location": ["north", "south", None][index % 3],
-                "Payment_Method": ["card", "wallet"][index % 2],
-                "Fraudulent": 1 if index % 7 == 0 else 0,
-            }
-        )
-    return pd.DataFrame(records)
-
-
-def build_test_preprocessor(
-    categorical_columns: list[str], numeric_columns: list[str]
-) -> ColumnTransformer:
-    numeric_pipeline = Pipeline(
-        steps=[
-            ("imputer", SimpleImputer(strategy="median")),
-            ("scaler", StandardScaler()),
-        ]
-    )
-    categorical_pipeline = Pipeline(
-        steps=[
-            ("imputer", SimpleImputer(strategy="most_frequent")),
-            ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
-        ]
-    )
-    return ColumnTransformer(
-        transformers=[
-            ("categorical", categorical_pipeline, categorical_columns),
-            ("numeric", numeric_pipeline, numeric_columns),
-        ]
-    )
-
-
-def fitted_pipeline() -> tuple[Pipeline, pd.DataFrame, pd.Series]:
-    data = make_transactions(40).drop(columns=["Transaction_ID", "User_ID"])
-    X = data[FEATURES]
-    y = data["Fraudulent"]
-    pipeline = Pipeline(
-        steps=[
-            (
-                "preprocessor",
-                build_test_preprocessor(CATEGORICAL_FEATURES, NUMERIC_FEATURES),
-            ),
-            (
-                "classifier",
-                LogisticRegression(
-                    class_weight="balanced", max_iter=500, random_state=42
-                ),
-            ),
-        ]
-    )
-    pipeline.fit(X, y)
-    return pipeline, X, y
-
-
-def local_settings(
-    tmp_path: Path,
-    model_mode: str = "transaction_candidate",
-    auth_required: bool = False,
-    api_key: str = "",
-    max_request_bytes: int = 1_048_576,
-    max_batch_rows: int = 100,
-) -> AppSettings:
-    return AppSettings(
+def local_settings(tmp_path: Path, **changes) -> AppSettings:
+    settings = AppSettings(
         app_env="test",
-        model_mode=model_mode,
-        model_artifact_root=tmp_path / "trainer",
-        transaction_candidate_artifact_root=tmp_path / "candidate",
+        transaction_artifact_root=tmp_path / "model",
         transaction_artifact_release_id="",
         artifact_storage_bucket="",
         artifact_cache_root=tmp_path / "release-cache",
         artifact_download_timeout_seconds=5,
         artifact_download_retries=0,
-        rollback_release_id="",
-        public_base_url="http://testserver",
         port=8000,
         supabase_url="",
         supabase_service_role_key="",
         upstash_redis_rest_url="",
         upstash_redis_rest_token="",
         upstash_fail_closed=False,
-        rate_limit_requests=2,
+        rate_limit_requests=5,
         rate_limit_window_seconds=60,
-        prediction_persistence_enabled=True,
-        auth_required=auth_required,
-        fraudguard_api_key=api_key,
-        max_request_bytes=max_request_bytes,
-        max_batch_rows=max_batch_rows,
+        max_request_bytes=1_048_576,
+        max_batch_rows=100,
+        dashboard_retention_days=30,
+        dashboard_row_limit=10_000,
     )
+    return replace(settings, **changes)
 
 
-def write_candidate_artifacts(root: Path) -> tuple[Pipeline, pd.DataFrame, pd.Series]:
-    pipeline, X, y = fitted_pipeline()
+def write_model_artifacts(root: Path) -> pd.DataFrame:
     root.mkdir(parents=True, exist_ok=True)
-    joblib.dump(pipeline, root / "model.joblib")
+    frame = pd.DataFrame(
+        {
+            "TransactionDT": np.arange(40),
+            "TransactionAmt": np.arange(40, dtype=float) + 1,
+            "card1": np.arange(40) % 4,
+            "isFraud": [0, 0, 0, 1] * 10,
+        }
+    )
+    model = Pipeline(
+        [
+            (
+                "preprocessor",
+                ColumnTransformer(
+                    [
+                        (
+                            "numeric",
+                            Pipeline([("imputer", SimpleImputer(strategy="median"))]),
+                            FEATURES,
+                        )
+                    ]
+                ),
+            ),
+            ("classifier", LogisticRegression(max_iter=300, random_state=42)),
+        ]
+    )
+    model.fit(frame[FEATURES], frame["isFraud"])
+    joblib.dump(model, root / "model.joblib")
     threshold = {
         "threshold": 0.4,
-        "objective": "out_of_fold_cost_weighted_loss",
+        "objective": "validation_cost_weighted_loss",
         "false_positive_cost": 1.0,
         "false_negative_cost": 20.0,
     }
     metadata = {
         "artifact_schema_version": 1,
-        "created_at_utc": "2026-09-21T00:00:00+00:00",
-        "model_name": "LightGBM tabular transaction benchmark",
-        "dataset": "transaction-data-local",
-        "metrics_source": "internal labeled test split",
-        "public_test_used_for_metrics": False,
-        "serving_promotion": False,
+        "model_version": "test-model-v1",
+        "created_at_utc": "2026-09-24T00:00:00+00:00",
+        "model_name": "Test transaction model",
         "feature_names": FEATURES,
-        "numeric_feature_count": len(NUMERIC_FEATURES),
-        "categorical_feature_count": len(CATEGORICAL_FEATURES),
+        "numeric_features": FEATURES,
+        "categorical_features": [],
+        "numeric_feature_count": len(FEATURES),
+        "categorical_feature_count": 0,
+        "public_test_used_for_metrics": False,
+        "score_is_calibrated": False,
         "threshold": threshold,
         "promotion_gates": {"all_gates_passed": True},
     }
-    feature_audit = {
+    audit = {
         "selected_feature_count": len(FEATURES),
-        "numeric_feature_count": len(NUMERIC_FEATURES),
-        "categorical_feature_count": len(CATEGORICAL_FEATURES),
         "public_test_used_for_metrics": False,
-        "schema_risks": ["test schema risk"],
+        "schema_risks": [],
     }
     (root / "threshold.json").write_text(json.dumps(threshold), encoding="utf-8")
     (root / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
-    (root / "feature_audit.json").write_text(
-        json.dumps(feature_audit), encoding="utf-8"
-    )
-    return pipeline, X, y
+    (root / "feature_audit.json").write_text(json.dumps(audit), encoding="utf-8")
+    return frame
 
 
-def make_transaction_data_files(
-    tmp_path: Path,
-    *,
-    join_identity: bool = False,
+def make_transaction_config(
+    tmp_path: Path, rows: int = 120
 ) -> TransactionBenchmarkConfig:
     data_dir = tmp_path / "data"
     data_dir.mkdir()
-    transaction_rows = []
-    for index in range(20):
-        transaction_rows.append(
+    records = []
+    for index in range(rows):
+        records.append(
             {
-                "TransactionID": 1000 + index,
-                "isFraud": 1 if index % 4 == 0 else 0,
-                "TransactionDT": index * 60,
+                "TransactionID": 10_000 + index,
+                "TransactionDT": index // 2,
                 "TransactionAmt": float(10 + index),
-                "card1": 100 + index % 3,
+                "card1": 100 + index % 5,
                 "ProductCD": ["W", "C", "R"][index % 3],
-                "V1": float(index % 5),
+                "isFraud": 1 if index % 5 == 0 else 0,
             }
         )
-    pd.DataFrame(transaction_rows).to_csv(
-        data_dir / "train_transaction.csv", index=False
-    )
-    pd.DataFrame(
-        [
-            {"TransactionID": 1000, "id_01": 1.0},
-            {"TransactionID": 1001, "id_01": 2.0},
-            {"TransactionID": 1004, "id_01": 3.0},
-        ]
-    ).to_csv(data_dir / "train_identity.csv", index=False)
-    pd.DataFrame([{"TransactionID": 9000, "id_01": 5.0}]).to_csv(
-        data_dir / "test_identity.csv", index=False
-    )
+    pd.DataFrame(records).to_csv(data_dir / "train_transaction.csv", index=False)
     return TransactionBenchmarkConfig(
         train_transaction_path=data_dir / "train_transaction.csv",
-        train_identity_path=data_dir / "train_identity.csv",
-        public_test_identity_path=data_dir / "test_identity.csv",
-        output_dir=tmp_path / "artifacts" / "benchmark" / "ieee_cis",
-        test_size=0.25,
-        validation_size=0.25,
-        random_state=7,
-        join_identity=join_identity,
+        output_dir=tmp_path / "artifacts" / "benchmark" / "transaction_data",
     )
 
 
-def test_preprocessor_handles_missing_and_unknown_categories():
-    train = make_transactions(20).drop(columns=["Transaction_ID", "User_ID"])
-    preprocessor = build_test_preprocessor(CATEGORICAL_FEATURES, NUMERIC_FEATURES)
-    preprocessor.fit(train[FEATURES])
+class FakePersistence:
+    mode = "supabase"
 
-    unseen = train.iloc[[0]][FEATURES].copy()
-    unseen.loc[:, "Location"] = "never-seen-location"
-    transformed = preprocessor.transform(unseen)
-    transformed_values = (
-        transformed.toarray() if hasattr(transformed, "toarray") else transformed
+    def __init__(self, records=None):
+        self.records = records or []
+        self.persisted: list[PredictionRecord] = []
+
+    def persist_predictions(self, records):
+        self.persisted.extend(records)
+        return len(records)
+
+    def fetch_recent_predictions(self, *, cutoff, limit):
+        return self.records[:limit]
+
+    def delete_predictions_before(self, cutoff):
+        return 0
+
+
+def configure_test_app(tmp_path: Path, **setting_changes):
+    frame = write_model_artifacts(tmp_path / "model")
+    settings = local_settings(tmp_path, **setting_changes)
+    app.state.settings = settings
+    app.state.transaction_model = TransactionPipeline(
+        settings.transaction_artifact_root
     )
-
-    assert transformed.shape[0] == 1
-    assert np.isfinite(transformed_values).all()
+    app.state.release_id = "test-release-v1"
+    app.state.persistence = FakePersistence()
+    app.state.rate_limiter = CloudRateLimiter(settings)
+    app.state.readiness_error = None
+    return frame
 
 
 def test_cost_weighted_threshold_uses_configured_costs():
@@ -271,490 +190,281 @@ def test_cost_weighted_threshold_uses_configured_costs():
         false_positive_cost=1.0,
         false_negative_cost=20.0,
     )
-
-    assert result["objective"] == "out_of_fold_cost_weighted_loss"
-    assert result["false_positive_cost"] == 1.0
     assert result["false_negative_cost"] == 20.0
     assert result["average_cost"] == pytest.approx(0.0)
 
 
-def test_transaction_candidate_pipeline_validates_schema_and_orders_features(tmp_path):
-    _, X, _ = write_candidate_artifacts(tmp_path / "candidate")
-    predictor = TransactionCandidatePipeline(tmp_path / "candidate")
-    row = X.iloc[0].to_dict()
-    reversed_row = {key: row[key] for key in reversed(FEATURES)}
-    reversed_row["unexpected_feature"] = "ignored"
-
-    result = predictor.predict_rows([reversed_row])
-
-    assert result["model_version"] == "2026-09-21T00:00:00+00:00"
-    assert result["feature_count"] == len(FEATURES)
-    assert result["ignored_features"] == ["unexpected_feature"]
-    assert result["results"][0]["fraud_status"] in {"Yes", "No"}
-
-    with pytest.raises(ValueError, match="Row 0 missing required features"):
-        predictor.predict_rows([{key: row[key] for key in FEATURES[:-1]}])
+def test_transaction_pipeline_validates_and_orders_features(tmp_path):
+    frame = write_model_artifacts(tmp_path / "model")
+    model = TransactionPipeline(tmp_path / "model")
+    row = frame.iloc[0][FEATURES].to_dict()
+    result = model.predict_rows([{**dict(reversed(list(row.items()))), "extra": 1}])
+    assert result["model_version"] == "test-model-v1"
+    assert result["ignored_features"] == ["extra"]
+    assert result["results"][0]["validation_status"] == "valid"
+    with pytest.raises(ValueError, match="missing required features"):
+        model.predict_rows([{"TransactionDT": 1}])
 
 
-def test_transaction_release_manifest_validates_checksums_and_paths(tmp_path):
-    candidate_root = tmp_path / "candidate"
-    write_candidate_artifacts(candidate_root)
-    manifest = build_transaction_release_manifest(
-        candidate_root,
-        release_id="release-20260922",
-    )
-    write_manifest(candidate_root, manifest)
+def test_release_manifest_checks_integrity(tmp_path):
+    root = tmp_path / "model"
+    write_model_artifacts(root)
+    manifest = build_transaction_release_manifest(root, release_id="release-v1")
+    write_manifest(root, manifest)
+    assert validate_release_directory(root).release_id == "release-v1"
+    path = root / "threshold.json"
+    path.write_text("{}", encoding="utf-8")
+    with pytest.raises(ValueError, match="size mismatch|checksum mismatch"):
+        validate_release_directory(root, validate_model=False)
 
-    loaded = validate_release_directory(
-        candidate_root,
-        expected_release_id="release-20260922",
-    )
 
-    assert loaded.release_id == "release-20260922"
-    assert {item.path for item in loaded.files} == {
-        "model.joblib",
-        "threshold.json",
-        "metadata.json",
-        "feature_audit.json",
+def test_settings_have_bounded_demo_defaults(monkeypatch):
+    for name in (
+        "RATE_LIMIT_REQUESTS",
+        "FRAUD_MODEL_MODE",
+        "AUTH_REQUIRED",
+        "FRAUDGUARD_API_KEY",
+        "ROLLBACK_RELEASE_ID",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    settings = load_settings()
+    assert settings.rate_limit_requests == 5
+    assert settings.max_batch_rows == 100
+    assert not hasattr(settings, "auth_required")
+    assert not hasattr(settings, "model_mode")
+
+
+def test_local_rate_limit_applies_before_prediction(tmp_path):
+    settings = local_settings(tmp_path, rate_limit_requests=2)
+    limiter = CloudRateLimiter(settings)
+    assert limiter.check("client").allowed
+    assert limiter.check("client").allowed
+    assert not limiter.check("client").allowed
+
+
+def test_anonymous_prediction_persists_only_sanitized_fields(tmp_path):
+    with TestClient(app) as client:
+        frame = configure_test_app(tmp_path)
+        persistence = app.state.persistence
+        row = frame.iloc[0][FEATURES].to_dict()
+        response = client.post("/predict/transactions", json={"rows": [row]})
+    assert response.status_code == 200
+    assert response.json()["release_id"] == "test-release-v1"
+    assert len(persistence.persisted) == 1
+    record = persistence.persisted[0]
+    assert record.transaction_amount == row["TransactionAmt"]
+    assert set(record.__dict__) == {
+        "prediction_id",
+        "request_id",
+        "model_version",
+        "release_id",
+        "transaction_amount",
+        "score",
+        "threshold",
+        "decision",
+        "score_is_calibrated",
+        "latency_ms",
+        "created_at",
     }
 
-    threshold_path = candidate_root / "threshold.json"
-    threshold_bytes = bytearray(threshold_path.read_bytes())
-    threshold_bytes[-2] = ord("9") if threshold_bytes[-2] != ord("9") else ord("8")
-    threshold_path.write_bytes(threshold_bytes)
-    with pytest.raises(ValueError, match="checksum mismatch"):
-        validate_release_directory(
-            candidate_root,
-            expected_release_id="release-20260922",
-            validate_model=False,
-        )
 
-
-def test_transaction_release_manifest_rejects_path_traversal(tmp_path):
-    candidate_root = tmp_path / "candidate"
-    write_candidate_artifacts(candidate_root)
-    manifest = build_transaction_release_manifest(
-        candidate_root,
-        release_id="release-20260922",
-    )
-    payload = manifest.to_dict()
-    payload["files"][0]["path"] = "../model.joblib"
-    (candidate_root / "manifest.json").write_text(json.dumps(payload), encoding="utf-8")
-
-    with pytest.raises(ValueError, match="Unsafe artifact path"):
-        validate_release_directory(candidate_root, validate_model=False)
-
-
-def test_json_helpers_and_disabled_mlflow_are_safe(tmp_path):
-    test_file = tmp_path / "test.json"
-    save_json(test_file, {"key": "value"})
-
-    assert load_json(test_file) == {"key": "value"}
-    init_mlflow_tracking()
-    init_mlflow_tracking()
-
-
-def test_cloud_settings_fallbacks_dataset_registry_and_rate_limit(tmp_path):
-    settings = local_settings(tmp_path)
-    persistence = SupabasePersistence(settings)
-    limiter = CloudRateLimiter(settings)
-    registry = default_dataset_registry(project_root=tmp_path)
-    transaction_status = validate_dataset_paths(registry["transaction-data-local"])
-
-    assert persistence.mode == "local_noop"
-    assert limiter.check("client").allowed is True
-    assert limiter.check("client").allowed is True
-    assert limiter.check("client").allowed is False
-    assert transaction_status["ready"] is False
-    assert "train_transaction.csv" in transaction_status["missing_paths"][0]
-    with pytest.raises(ValueError, match="retired from executable workflows"):
-        find_registered_dataset(registry, "baseline-current")
-
-
-def test_prediction_api_returns_safe_json_contract(tmp_path):
-    _, X, _ = write_candidate_artifacts(tmp_path / "candidate")
-    payload = {"rows": [X.iloc[0].to_dict()]}
-    candidate_settings = local_settings(tmp_path, model_mode="transaction_candidate")
-
+def test_prediction_guardrails_cover_rate_bytes_and_rows(tmp_path):
     with TestClient(app) as client:
-        app.state.settings = candidate_settings
-        app.state.transaction_candidate = TransactionCandidatePipeline(
-            candidate_settings.transaction_candidate_artifact_root
+        frame = configure_test_app(
+            tmp_path,
+            rate_limit_requests=1,
+            max_request_bytes=200,
+            max_batch_rows=1,
         )
-        app.state.persistence = SupabasePersistence(candidate_settings)
-        app.state.rate_limiter = CloudRateLimiter(candidate_settings)
-        response = client.post("/predict/transactions", json=payload)
+        row = frame.iloc[0][FEATURES].to_dict()
+        first = client.post("/predict/transactions", json={"rows": [row]})
+        limited = client.post("/predict/transactions", json={"rows": [row]})
+        app.state.rate_limiter = CloudRateLimiter(app.state.settings)
+        too_many = client.post("/predict/transactions", json={"rows": [row, row]})
+        oversized = client.post(
+            "/predict/transactions",
+            content=json.dumps({"rows": [{**row, "padding": "x" * 500}]}),
+            headers={"content-type": "application/json"},
+        )
+    assert first.status_code == 200
+    assert limited.status_code == 429
+    assert too_many.status_code == 422
+    assert oversized.status_code == 413
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["model_mode"] == "transaction_candidate"
-    assert body["row_count"] == 1
-    assert "prediction_id" in body["results"][0]
-    assert body["results"][0]["fraud_status"] in {"Yes", "No"}
-    assert "results_url" not in body
-    assert body["persistence"] == "local_noop"
 
-
-def test_prediction_api_requires_valid_api_key_when_enabled(tmp_path):
-    _, X, _ = write_candidate_artifacts(tmp_path / "candidate")
-    payload = {"rows": [X.iloc[0].to_dict()]}
-    secure_settings = local_settings(
-        tmp_path,
-        model_mode="transaction_candidate",
-        auth_required=True,
-        api_key="test-secret",
-    )
-
+def test_readiness_liveness_and_removed_enterprise_routes(tmp_path):
     with TestClient(app) as client:
-        app.state.settings = secure_settings
-        app.state.transaction_candidate = TransactionCandidatePipeline(
-            secure_settings.transaction_candidate_artifact_root
-        )
-        app.state.persistence = SupabasePersistence(secure_settings)
-        app.state.rate_limiter = CloudRateLimiter(secure_settings)
-
-        assert client.get("/ready").status_code == 200
-        missing = client.post("/predict/transactions", json=payload)
-        wrong = client.post(
-            "/predict/transactions",
-            json=payload,
-            headers={"x-api-key": "wrong-secret"},
-        )
-        valid = client.post(
-            "/predict/transactions",
-            json=payload,
-            headers={"x-api-key": "test-secret"},
-        )
-        bearer = client.post(
-            "/predict/transactions",
-            json=payload,
-            headers={"Authorization": "Bearer test-secret"},
-        )
-
-    assert missing.status_code == 401
-    assert wrong.status_code == 403
-    assert valid.status_code == 200
-    assert bearer.status_code == 200
+        configure_test_app(tmp_path)
+        assert client.get("/live").status_code == 200
+        ready = client.get("/ready")
+        assert ready.status_code == 200
+        assert ready.json()["release_id"] == "test-release-v1"
+        assert ready.json()["rate_limit_policy"]["requests"] == 5
+        assert "schema_risks" not in ready.json()["model"]
+        assert "schema_risks" not in client.get("/schema/transactions").json()
+        assert client.post("/feedback", json={}).status_code == 404
+        api = client.get("/api").json()
+    assert api["access"] == "anonymous_rate_limited_demo"
+    assert "feedback" not in api["endpoints"]
+    assert "authentication" not in api
 
 
-def test_request_size_guard_rejects_large_payload_before_prediction(tmp_path):
-    settings = local_settings(tmp_path, max_request_bytes=20)
-    payload = {"rows": [{"TransactionAmt": 10.0, "TransactionDT": 1}]}
-
-    with TestClient(app) as client:
-        app.state.settings = settings
-        app.state.persistence = SupabasePersistence(settings)
-        response = client.post("/predict/transactions", json=payload)
-
-    assert response.status_code == 413
-    assert response.json()["max_request_bytes"] == 20
-
-
-def test_transaction_candidate_endpoint_is_feature_flagged_and_batch_safe(tmp_path):
-    _, X, _ = write_candidate_artifacts(tmp_path / "candidate")
-    row = X.iloc[0].to_dict()
-
+def test_unavailable_model_fails_readiness_but_not_liveness(tmp_path):
     with TestClient(app) as client:
         app.state.settings = local_settings(tmp_path)
-        app.state.transaction_candidate = None
-        app.state.persistence = SupabasePersistence(local_settings(tmp_path))
-        app.state.rate_limiter = CloudRateLimiter(local_settings(tmp_path))
+        app.state.transaction_model = None
+        app.state.readiness_error = "FileNotFoundError"
+        app.state.persistence = FakePersistence()
+        app.state.rate_limiter = CloudRateLimiter(app.state.settings)
+        assert client.get("/live").status_code == 200
+        response = client.get("/ready")
+    assert response.status_code == 503
+    assert "FileNotFoundError" in response.text
+    assert str(tmp_path) not in response.text
 
-        disabled_response = client.post("/predict/transactions", json={"rows": [row]})
-        assert disabled_response.status_code == 503
 
-        candidate_settings = local_settings(
-            tmp_path, model_mode="transaction_candidate"
-        )
-        app.state.settings = candidate_settings
-        candidate_not_ready = client.get("/ready")
-        assert candidate_not_ready.status_code == 503
-        assert candidate_not_ready.json()["detail"]["candidate_model_loaded"] is False
+def test_dashboard_is_bounded_aggregated_and_redacted():
+    records = [
+        {
+            "prediction_id": f"prediction-{index:02d}",
+            "request_id": "request-secret-not-returned",
+            "created_at": f"2026-09-{24 - index:02d}T10:00:00+00:00",
+            "transaction_amount": 100 + index,
+            "score": 0.9 if index < 6 else 0.1,
+            "threshold": 0.4,
+            "decision": "Yes" if index < 6 else "No",
+            "latency_ms": 10,
+            "model_version": "v1",
+            "release_id": "r1",
+        }
+        for index in range(8)
+    ]
+    snapshot = _dashboard_snapshot(
+        records,
+        persistence_mode="supabase",
+        window_start=pd.Timestamp("2026-08-25", tz="UTC").to_pydatetime(),
+        window_end=pd.Timestamp("2026-09-24", tz="UTC").to_pydatetime(),
+        truncated=True,
+    )
+    assert snapshot["transaction_count"] == 8
+    assert snapshot["flagged_count"] == 6
+    assert len(snapshot["recent_flagged"]) == 5
+    assert snapshot["truncated"] is True
+    assert "request-secret-not-returned" not in json.dumps(snapshot)
+    assert all(len(row["prediction_id"]) <= 8 for row in snapshot["recent_flagged"])
 
-        app.state.transaction_candidate = TransactionCandidatePipeline(
-            candidate_settings.transaction_candidate_artifact_root
-        )
-        app.state.rate_limiter = CloudRateLimiter(candidate_settings)
 
-        response = client.post(
-            "/predict/transactions",
-            json={"rows": [{**row, "unexpected_feature": "ignored"}]},
-        )
-        schema_response = client.get("/schema/transactions")
-
+def test_dashboard_local_fallback_is_explicit(tmp_path):
+    with TestClient(app) as client:
+        configure_test_app(tmp_path)
+        app.state.persistence = SupabasePersistence(app.state.settings)
+        response = client.get("/dashboard")
     assert response.status_code == 200
-    body = response.json()
-    assert body["model_mode"] == "transaction_candidate"
-    assert body["row_count"] == 1
-    assert body["ignored_features"] == ["unexpected_feature"]
-    assert body["results"][0]["fraud_status"] in {"Yes", "No"}
-    assert "prediction_id" in body["results"][0]
-    assert schema_response.status_code == 200
-    schema = schema_response.json()
-    assert schema["model_mode"] == "transaction_candidate"
-    assert schema["feature_names"] == list(X.columns)
-    assert schema["feature_count"] == len(X.columns)
+    assert response.json()["persistence"] == "local_noop"
+    assert response.json()["transaction_count"] == 0
 
 
-def test_transaction_batch_endpoint_requires_server_api_key_when_auth_is_enabled(
-    tmp_path,
-):
-    _, X, _ = write_candidate_artifacts(tmp_path / "candidate")
-    row = X.iloc[0].to_dict()
-    candidate_settings = local_settings(
-        tmp_path,
-        model_mode="transaction_candidate",
-        auth_required=True,
-        api_key="server-secret",
+def test_chronological_split_is_deterministic_and_keeps_time_groups(tmp_path):
+    config = make_transaction_config(tmp_path)
+    frame = pd.read_csv(config.train_transaction_path)
+    frame = pd.concat([frame, frame.iloc[[0]]], ignore_index=True)
+    first = split_labeled_transaction_data(frame, config)
+    second = split_labeled_transaction_data(frame, config)
+    for name in ("train", "validation", "test"):
+        pd.testing.assert_frame_equal(first[name], second[name])
+        assert first[name]["isFraud"].nunique() == 2
+    assert (
+        first["train"]["TransactionDT"].max()
+        < first["validation"]["TransactionDT"].min()
+    )
+    assert (
+        first["validation"]["TransactionDT"].max()
+        < first["test"]["TransactionDT"].min()
+    )
+    assert sum(map(len, first.values())) == len(frame.drop_duplicates())
+
+
+def test_chronological_split_fails_if_a_period_has_one_class(tmp_path):
+    config = make_transaction_config(tmp_path, rows=30)
+    frame = pd.read_csv(config.train_transaction_path)
+    frame["isFraud"] = 0
+    frame.loc[:2, "isFraud"] = 1
+    with pytest.raises(ValueError, match="partition must contain both"):
+        split_labeled_transaction_data(frame, config)
+
+
+def test_transaction_contract_and_smoke_evaluation_are_temporal(tmp_path):
+    config = make_transaction_config(tmp_path)
+    contract = validate_transaction_data_contract(config)
+    prepared = prepare_transaction_benchmark(config)
+    report = run_transaction_smoke_benchmark(config)
+    assert contract["ready"] is True
+    assert prepared["split_strategy"] == "chronological_70_15_15_time_groups"
+    assert report["smoke_benchmark"]["threshold_selected_from"] == (
+        "chronological validation period"
+    )
+    ratios = {
+        item["false_negative_cost"]
+        for item in report["smoke_benchmark"]["cost_sensitivity"]
+    }
+    assert ratios == set(COST_SENSITIVITY_RATIOS)
+    assert report["smoke_benchmark"]["metrics_source"] == (
+        "untouched chronological test period"
     )
 
-    with TestClient(app) as client:
-        app.state.settings = candidate_settings
-        app.state.transaction_candidate = TransactionCandidatePipeline(
-            candidate_settings.transaction_candidate_artifact_root
-        )
-        app.state.persistence = SupabasePersistence(candidate_settings)
-        app.state.rate_limiter = CloudRateLimiter(candidate_settings)
 
-        public_missing_key = client.post("/predict/transactions", json={"rows": [row]})
-        public_with_key = client.post(
-            "/predict/transactions",
-            json={"rows": [row]},
-            headers={"x-api-key": "server-secret"},
-        )
-        removed_ui_route = client.post("/ui/predict/transactions", json={"rows": [row]})
-
-    assert public_missing_key.status_code == 401
-    assert public_missing_key.json()["detail"] == "API key required"
-    assert public_with_key.status_code == 200
-    assert public_with_key.json()["row_count"] == 1
-    assert removed_ui_route.status_code == 404
-
-
-def test_service_index_reports_backend_api_surface():
-    with TestClient(app) as client:
-        response = client.get("/")
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["service"] == "FraudGuard API"
-    assert body["status"] == "ok"
-    assert body["documentation"] == "/docs"
-    assert body["health"] == {
-        "liveness": "/live",
-        "readiness": "/ready",
-        "version": "/version",
+def test_strong_benchmark_records_promotion_gates(tmp_path):
+    pytest.importorskip("lightgbm")
+    config = make_transaction_config(tmp_path)
+    report = run_transaction_strong_benchmark(config)
+    evidence = report["strong_benchmark"]
+    assert evidence["promotion_gates"]["decision"] in {"approved", "blocked"}
+    assert set(evidence["promotion_gates"]["gates"]) == {
+        "average_precision",
+        "recall",
+        "average_cost",
+        "logistic_baseline_cost",
+        "feature_schema",
+        "artifact_package",
     }
-    assert body["endpoints"]["transaction_batch_prediction"] == "/predict/transactions"
-    assert "/ui/predict/transactions" not in response.text
-    assert "FRAUDGUARD_API_KEY" not in response.text
-
-
-def test_version_endpoint_reports_non_sensitive_build_metadata(monkeypatch):
-    monkeypatch.delenv("RENDER_GIT_COMMIT", raising=False)
-    monkeypatch.delenv("APP_COMMIT_SHA", raising=False)
-    monkeypatch.delenv("APP_BUILD_TIME", raising=False)
-    monkeypatch.setenv("BUILD_COMMIT_SHA", "a" * 40)
-    monkeypatch.setenv("BUILD_TIME", "2026-09-22T00:00:00Z")
-
-    with TestClient(app) as client:
-        response = client.get("/version")
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "commit_sha": "a" * 40,
-        "build_time": "2026-09-22T00:00:00Z",
-    }
-
-
-def test_transaction_mode_readiness_does_not_require_baseline_artifacts(tmp_path):
-    write_candidate_artifacts(tmp_path / "candidate")
-    candidate_settings = local_settings(tmp_path, model_mode="transaction_candidate")
-
-    with TestClient(app) as client:
-        app.state.settings = candidate_settings
-        app.state.transaction_candidate = TransactionCandidatePipeline(
-            candidate_settings.transaction_candidate_artifact_root
-        )
-        app.state.persistence = SupabasePersistence(candidate_settings)
-        app.state.rate_limiter = CloudRateLimiter(candidate_settings)
-
-        ready = client.get("/ready")
-        legacy_response = client.post("/predict", json={})
-
-    assert ready.status_code == 200
-    body = ready.json()
-    assert body["candidate_model_loaded"] is True
-    assert legacy_response.status_code == 404
-
-
-def test_transaction_candidate_endpoint_enforces_batch_row_limit(tmp_path):
-    _, X, _ = write_candidate_artifacts(tmp_path / "candidate")
-    row = X.iloc[0].to_dict()
-    candidate_settings = local_settings(
-        tmp_path, model_mode="transaction_candidate", max_batch_rows=1
+    metadata = json.loads(
+        Path(evidence["artifacts"]["metadata"]).read_text(encoding="utf-8")
     )
-
-    with TestClient(app) as client:
-        app.state.settings = candidate_settings
-        app.state.transaction_candidate = TransactionCandidatePipeline(
-            candidate_settings.transaction_candidate_artifact_root
-        )
-        app.state.persistence = SupabasePersistence(candidate_settings)
-        app.state.rate_limiter = CloudRateLimiter(candidate_settings)
-        response = client.post("/predict/transactions", json={"rows": [row, row]})
-
-    assert response.status_code == 422
-    assert "Batch row count exceeds limit" in response.json()["detail"]
+    assert metadata["public_test_used_for_metrics"] is False
+    assert len(metadata["threshold"]["cost_sensitivity"]) == 4
 
 
-def test_monitoring_reports_handle_insufficient_and_delayed_labels(tmp_path):
-    reference = tmp_path / "reference.csv"
-    current = tmp_path / "current.csv"
-    drift_metrics = tmp_path / "drift_metrics.json"
-    pd.DataFrame(
+def test_monitoring_accepts_only_sanitized_output_columns(tmp_path):
+    frame = pd.DataFrame(
         [
             {
-                "prediction_id": "p1",
-                "model_version": "v1",
-                "release_id": "r1",
-                "score": 0.1,
+                "created_at": "2026-09-24T00:00:00Z",
+                "transaction_amount": 10,
+                "score": 0.2,
                 "threshold": 0.4,
                 "decision": "No",
-                "raw_payload": "must-not-pass",
-            }
-        ]
-    ).to_csv(reference, index=False)
-    pd.DataFrame(
-        [
-            {
-                "prediction_id": "p2",
+                "latency_ms": 5,
                 "model_version": "v1",
                 "release_id": "r1",
-                "score": 0.8,
-                "threshold": 0.4,
-                "decision": "Yes",
+                "card1": "must-not-pass",
+                "SUPABASE_SERVICE_ROLE_KEY": "must-not-pass",
             }
         ]
-    ).to_csv(current, index=False)
+    )
+    sanitized = sanitize_monitoring_frame(frame)
+    assert set(sanitized.columns).issubset(APPROVED_MONITORING_COLUMNS)
+    assert "card1" not in sanitized
 
-    generate_unlabeled_drift_report(
+    reference = tmp_path / "reference.csv"
+    current = tmp_path / "current.csv"
+    frame.to_csv(reference, index=False)
+    frame.to_csv(current, index=False)
+    metrics = generate_output_monitoring_report(
         reference,
         current,
-        tmp_path / "drift.html",
-        metrics_path=drift_metrics,
+        tmp_path / "report.html",
+        metrics_path=tmp_path / "metrics.json",
         min_rows=5,
     )
-    drift_payload = json.loads(drift_metrics.read_text(encoding="utf-8"))
-
-    assert drift_payload["status"] == "insufficient_data"
-    assert drift_payload["reference_rows"] == 1
-
-    predictions = tmp_path / "predictions.csv"
-    feedback = tmp_path / "feedback.csv"
-    performance_metrics = tmp_path / "performance.json"
-    pd.DataFrame(
-        [
-            {"prediction_id": "p1", "score": 0.1, "threshold": 0.4, "decision": "No"},
-            {"prediction_id": "p2", "score": 0.8, "threshold": 0.4, "decision": "Yes"},
-            {"prediction_id": "p3", "score": 0.7, "threshold": 0.4, "decision": "Yes"},
-        ]
-    ).to_csv(predictions, index=False)
-    pd.DataFrame(
-        [
-            {"prediction_id": "p1", "confirmed_label": 0},
-            {"prediction_id": "p2", "confirmed_label": 1},
-        ]
-    ).to_csv(feedback, index=False)
-
-    metrics = generate_delayed_label_performance_report(
-        predictions,
-        feedback,
-        performance_metrics,
-    )
-
-    assert metrics["status"] == "success"
-    assert metrics["label_count"] == 2
-    assert metrics["label_coverage"] == pytest.approx(2 / 3)
-    assert metrics["precision"] == pytest.approx(1.0)
-
-
-def test_transaction_data_contract_defaults_to_transaction_only(tmp_path):
-    config = make_transaction_data_files(tmp_path)
-    status = validate_transaction_data_contract(config)
-    prepared = load_labeled_transaction_data(config)
-
-    assert status["ready"] is True
-    assert status["public_test_used_for_metrics"] is False
-    assert status["identity_coverage_in_sample"] is None
-    assert status["class_counts"]["0"] == 15
-    assert status["class_counts"]["1"] == 5
-    assert len(prepared) == 20
-    assert "id_01" not in prepared.columns
-
-
-def test_identity_join_remains_available_as_optional_side_table(tmp_path):
-    config = make_transaction_data_files(tmp_path, join_identity=True)
-    status = validate_transaction_data_contract(config)
-    prepared = load_labeled_transaction_data(config)
-
-    assert status["ready"] is True
-    assert status["identity_coverage_in_sample"] == pytest.approx(3 / 20)
-    assert len(prepared) == 20
-    assert prepared["id_01"].isna().sum() == 17
-
-
-def test_transaction_data_splits_are_deterministic_and_internal(tmp_path):
-    config = make_transaction_data_files(tmp_path)
-    prepared = load_labeled_transaction_data(config)
-    first = split_labeled_transaction_data(prepared, config)
-    second = split_labeled_transaction_data(prepared, config)
-    report = prepare_transaction_benchmark(config)
-
-    for split_name in ["train", "validation", "test"]:
-        pd.testing.assert_frame_equal(first[split_name], second[split_name])
-        assert first[split_name]["isFraud"].nunique() == 2
-
-    assert report["public_test_used_for_metrics"] is False
-    assert set(report["output_paths"]) == {"train", "validation", "test"}
-    assert Path(report["report_path"]).exists()
-
-
-def test_transaction_data_smoke_benchmark_reports_cost_weighted_metrics(tmp_path):
-    config = make_transaction_data_files(tmp_path)
-    report = run_transaction_smoke_benchmark(config)
-    metrics = report["smoke_benchmark"]["metrics"]
-
-    assert report["smoke_benchmark"]["metrics_source"] == "internal labeled test split"
-    assert report["smoke_benchmark"]["serving_promotion"] is False
-    assert metrics["rows"] == 5
-    assert metrics["cost_weighted"]["false_negative_cost"] == 20.0
-    assert "average_precision" in metrics
-    assert Path(report["benchmark_report_path"]).exists()
-
-
-def test_transaction_strong_benchmark_compares_against_smoke_baseline(tmp_path):
-    pytest.importorskip("lightgbm")
-    config = make_transaction_data_files(tmp_path)
-    serving_artifact = tmp_path / "artifacts" / "trainer" / "model.joblib"
-    serving_artifact.parent.mkdir(parents=True, exist_ok=True)
-    serving_artifact.write_bytes(b"current-serving-model")
-
-    report = run_transaction_strong_benchmark(config)
-    candidate_artifacts = report["strong_benchmark"]["candidate_artifacts"]
-
-    assert report["strong_benchmark"]["serving_promotion"] is False
-    assert report["model_comparison"]["promotion_decision"] == "not_promoted"
-    assert "average_precision_delta" in report["model_comparison"]
-    assert report["strong_benchmark"]["metrics"]["feature_count"] > 0
-    assert report["strong_benchmark"]["promotion_gates"]["serving_promotion"] is False
-    assert (
-        report["strong_benchmark"]["feature_audit"]["public_test_used_for_metrics"]
-        is False
-    )
-    assert Path(candidate_artifacts["model"]).exists()
-    assert Path(candidate_artifacts["threshold"]).exists()
-    assert Path(candidate_artifacts["metadata"]).exists()
-    assert Path(candidate_artifacts["feature_audit"]).exists()
-    assert Path(report["strong_benchmark_report_path"]).exists()
-    assert serving_artifact.read_bytes() == b"current-serving-model"
+    assert metrics["status"] == "insufficient_data"
+    assert "SUPABASE_SERVICE_ROLE_KEY" not in json.dumps(metrics)

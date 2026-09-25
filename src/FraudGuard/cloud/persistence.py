@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from FraudGuard import logger
@@ -12,7 +13,7 @@ from FraudGuard.cloud.settings import AppSettings
 
 
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 @dataclass(frozen=True)
@@ -20,48 +21,39 @@ class PredictionRecord:
     prediction_id: str
     request_id: str
     model_version: str
-    model_mode: str
+    release_id: str
+    transaction_amount: float | None
     score: float
     threshold: float
     decision: str
     score_is_calibrated: bool
     latency_ms: float
-    metadata: dict[str, Any]
+    created_at: str
 
 
 class SupabasePersistence:
+    """Server-only access to the sanitized demo persistence schema."""
+
     def __init__(self, settings: AppSettings):
         self.settings = settings
-        self.enabled = (
-            settings.prediction_persistence_enabled and settings.supabase_configured
-        )
+        self.enabled = settings.supabase_configured
 
     @property
     def mode(self) -> str:
         return "supabase" if self.enabled else "local_noop"
 
-    def persist_prediction(self, record: PredictionRecord) -> bool:
-        if not self.enabled:
-            return False
-
-        payload = {
-            "prediction_id": record.prediction_id,
-            "request_id": record.request_id,
-            "model_version": record.model_version,
-            "model_mode": record.model_mode,
-            "score": record.score,
-            "threshold": record.threshold,
-            "decision": record.decision,
-            "score_is_calibrated": record.score_is_calibrated,
-            "latency_ms": record.latency_ms,
-            "metadata": record.metadata,
-            "created_at": utc_now_iso(),
-        }
-        return self._insert("prediction_requests", payload)
+    def persist_predictions(self, records: list[PredictionRecord]) -> int:
+        if not self.enabled or not records:
+            return 0
+        result = self._request(
+            "prediction_requests", "POST", [asdict(record) for record in records]
+        )
+        return len(records) if result is True else 0
 
     def persist_model_release(
         self,
         *,
+        release_id: str,
         model_version: str,
         model_name: str,
         artifact_schema_version: int,
@@ -71,9 +63,19 @@ class SupabasePersistence:
     ) -> bool:
         if not self.enabled:
             return False
-
+        existing = self._request(
+            "model_releases",
+            "GET",
+            query={
+                "select": "release_id",
+                "release_id": f"eq.{release_id}",
+                "limit": "1",
+            },
+        )
+        if isinstance(existing, list) and existing:
+            return True
         payload = {
-            "release_id": metadata.get("release_id"),
+            "release_id": release_id,
             "model_version": model_version,
             "model_name": model_name,
             "artifact_schema_version": artifact_schema_version,
@@ -82,64 +84,92 @@ class SupabasePersistence:
             "false_positive_cost": metadata.get("false_positive_cost"),
             "false_negative_cost": metadata.get("false_negative_cost"),
             "score_is_calibrated": score_is_calibrated,
-            "model_mode": metadata.get("model_mode", "baseline"),
             "feature_schema_summary": metadata.get("feature_schema_summary", {}),
             "released_at": metadata.get("released_at", utc_now_iso()),
             "created_at": utc_now_iso(),
         }
-        return self._insert("model_releases", payload)
+        result = self._request("model_releases", "POST", payload)
+        return result is True
 
-    def persist_audit_event(
-        self, event_type: str, entity_id: str | None, metadata: dict[str, Any]
-    ) -> bool:
+    def fetch_recent_predictions(
+        self, *, cutoff: str, limit: int
+    ) -> list[dict[str, Any]]:
         if not self.enabled:
-            return False
+            return []
+        selected = (
+            "prediction_id,request_id,created_at,transaction_amount,score,threshold,"
+            "decision,score_is_calibrated,latency_ms,model_version,release_id"
+        )
+        result = self._request(
+            "prediction_requests",
+            "GET",
+            query={
+                "select": selected,
+                "created_at": f"gte.{cutoff}",
+                "order": "created_at.desc",
+                "limit": str(limit),
+            },
+        )
+        return result if isinstance(result, list) else []
 
-        payload = {
-            "event_type": event_type,
-            "entity_id": entity_id,
-            "metadata": metadata,
-            "created_at": utc_now_iso(),
-        }
-        return self._insert("audit_events", payload)
+    def delete_predictions_before(self, cutoff: str) -> int | None:
+        if not self.enabled:
+            return None
+        result = self._request(
+            "prediction_requests",
+            "DELETE",
+            query={"created_at": f"lt.{cutoff}", "select": "prediction_id"},
+            prefer="return=representation",
+        )
+        return len(result) if isinstance(result, list) else None
 
-    def persist_feedback(
+    def delete_all_predictions(self) -> int | None:
+        if not self.enabled:
+            return None
+        result = self._request(
+            "prediction_requests",
+            "DELETE",
+            query={"prediction_id": "not.is.null", "select": "prediction_id"},
+            prefer="return=representation",
+        )
+        return len(result) if isinstance(result, list) else None
+
+    def _request(
         self,
-        prediction_id: str,
-        confirmed_label: int,
-        reviewer_decision: str | None,
-        feedback_source: str,
-        metadata: dict[str, Any],
-    ) -> bool:
-        if not self.enabled:
-            return False
-
-        payload = {
-            "prediction_id": prediction_id,
-            "confirmed_label": confirmed_label,
-            "reviewer_decision": reviewer_decision,
-            "feedback_source": feedback_source,
-            "metadata": metadata,
-            "created_at": utc_now_iso(),
-        }
-        return self._insert("prediction_feedback", payload)
-
-    def _insert(self, table: str, payload: dict[str, Any]) -> bool:
-        body = json.dumps(payload).encode("utf-8")
+        table: str,
+        method: str,
+        payload: dict[str, Any] | list[dict[str, Any]] | None = None,
+        *,
+        query: dict[str, str] | None = None,
+        prefer: str = "return=minimal",
+    ) -> bool | list[dict[str, Any]]:
+        query_string = urllib.parse.urlencode(query or {}, safe=".,")
+        url = f"{self.settings.supabase_url}/rest/v1/{table}"
+        if query_string:
+            url = f"{url}?{query_string}"
+        data = json.dumps(payload).encode("utf-8") if payload is not None else None
         request = urllib.request.Request(
-            url=f"{self.settings.supabase_url}/rest/v1/{table}",
-            data=body,
-            method="POST",
+            url=url,
+            data=data,
+            method=method,
             headers={
                 "Content-Type": "application/json",
                 "apikey": self.settings.supabase_service_role_key,
                 "Authorization": f"Bearer {self.settings.supabase_service_role_key}",
-                "Prefer": "return=minimal",
+                "Prefer": prefer,
             },
         )
         try:
             with urllib.request.urlopen(request, timeout=5) as response:
-                return 200 <= response.status < 300
-        except (urllib.error.URLError, TimeoutError) as error:
-            logger.warning("Supabase insert failed for %s: %s", table, error)
+                if not 200 <= response.status < 300:
+                    return False
+                body = response.read()
+                return json.loads(body) if body else True
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+            logger.warning(
+                "provider=supabase operation=%s table=%s outcome=failed category=%s",
+                method.lower(),
+                table,
+                error.__class__.__name__,
+            )
             return False

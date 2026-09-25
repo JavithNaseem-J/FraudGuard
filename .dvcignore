@@ -13,4 +13,3 @@ mlruns/
 catboost_info/
 remote/
 artifacts/releases/
-artifacts/benchmark/

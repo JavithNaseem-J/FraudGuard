@@ -1,1 +1,1 @@
-"""Dataset registry and validation helpers."""
+"""Transaction-only dataset validation and benchmark helpers."""

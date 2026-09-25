@@ -12,9 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from FraudGuard.cloud.settings import AppSettings
-from FraudGuard.pipeline.transaction_candidate_pipeline import (
-    TransactionCandidatePipeline,
-)
+from FraudGuard.pipeline.transaction_pipeline import TransactionPipeline
 
 MANIFEST_FILENAME = "manifest.json"
 REQUIRED_TRANSACTION_FILES = (
@@ -104,7 +102,7 @@ def build_transaction_release_manifest(
         created_at_utc=datetime.now(UTC).isoformat(),
         files=files,
         metadata={
-            "model_mode": "transaction_candidate",
+            "artifact_type": "transaction_model",
             "required_files": list(REQUIRED_TRANSACTION_FILES),
         },
     )
@@ -174,7 +172,7 @@ def validate_release_directory(
         if _sha256(path) != item.sha256:
             raise ValueError(f"Artifact checksum mismatch: {item.path}")
     if validate_model:
-        TransactionCandidatePipeline(artifact_root)
+        TransactionPipeline(artifact_root)
     return manifest
 
 
@@ -269,11 +267,9 @@ def download_transaction_release(
 def ensure_transaction_release(
     settings: AppSettings,
 ) -> tuple[Path, ArtifactManifest | None]:
-    release_id = (
-        settings.rollback_release_id or settings.transaction_artifact_release_id
-    )
+    release_id = settings.transaction_artifact_release_id
     if not release_id:
-        root = settings.transaction_candidate_artifact_root
+        root = settings.transaction_artifact_root
         manifest_path = root / MANIFEST_FILENAME
         if manifest_path.exists():
             return root, validate_release_directory(root, validate_model=False)

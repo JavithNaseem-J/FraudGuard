@@ -3,7 +3,6 @@ from __future__ import annotations
 import numpy as np
 from sklearn.metrics import confusion_matrix
 
-
 DEFAULT_FALSE_POSITIVE_COST = 1.0
 DEFAULT_FALSE_NEGATIVE_COST = 20.0
 

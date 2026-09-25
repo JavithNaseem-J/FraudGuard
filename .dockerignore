@@ -32,3 +32,6 @@ tests/
 htmlcov/
 coverage.xml
 *.log
+
+frontend/node_modules/
+frontend/dist/

@@ -193,15 +193,21 @@ cython_debug/
 graphify-out/
 openspec/
 
+# Local-only project resources
+docs/
+data/
+
+# Supabase migrations are reproducible schema source; local CLI state is not.
+supabase/*
+!supabase/migrations/
+!supabase/migrations/*.sql
+
 # Local services and runtime output
 logs/
 remote/
 artifacts/
 mlruns/
 catboost_info/
-
-# Local raw datasets are intentionally not versioned.
-data/*.csv
 
 # DVC local state
 .dvc/cache/

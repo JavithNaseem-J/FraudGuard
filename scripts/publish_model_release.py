@@ -5,15 +5,13 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-from FraudGuard.cloud.artifacts import (  # noqa: E402
+from FraudGuard.cloud.artifacts import (
     build_transaction_release_manifest,
     publish_transaction_release,
     validate_release_directory,
     write_manifest,
 )
-from FraudGuard.cloud.settings import load_settings  # noqa: E402
+from FraudGuard.cloud.settings import load_settings
 
 
 def parse_args() -> argparse.Namespace:
@@ -33,6 +31,13 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     settings = load_settings()
+    metadata_path = args.artifact_root / "metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    promotion = metadata.get("promotion_gates", {})
+    if promotion.get("all_gates_passed") is not True:
+        raise SystemExit(
+            "Release publication blocked: model promotion gates did not all pass"
+        )
     manifest = build_transaction_release_manifest(
         args.artifact_root,
         release_id=args.release_id,

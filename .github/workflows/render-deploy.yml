@@ -129,16 +129,11 @@ jobs:
       - name: Wait for production and verify exact version
         env:
           PUBLIC_BASE_URL: ${{ secrets.RENDER_PUBLIC_BASE_URL }}
-          FRAUDGUARD_API_KEY: ${{ secrets.FRAUDGUARD_API_KEY }}
           EXPECTED_COMMIT_SHA: ${{ env.EXACT_SHA }}
         run: |
           set -euo pipefail
           if [ -z "${PUBLIC_BASE_URL:-}" ]; then
             echo "RENDER_PUBLIC_BASE_URL secret is required for production verification." >&2
-            exit 1
-          fi
-          if [ -z "${FRAUDGUARD_API_KEY:-}" ]; then
-            echo "FRAUDGUARD_API_KEY secret is required for production prediction smoke tests." >&2
             exit 1
           fi
           python scripts/render_smoke.py 2>&1 | tee deployment-verification/render-smoke.log

@@ -2,11 +2,9 @@ name: FraudGuard CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -14,198 +12,118 @@ permissions:
 
 env:
   PYTHON_VERSION: "3.11"
-  APP_ENV: "ci"
-  FRAUD_MODEL_MODE: "transaction_candidate"
-  AUTH_REQUIRED: "true"
-  FRAUDGUARD_API_KEY: "ci-test-key"
-  TRANSACTION_CANDIDATE_ARTIFACT_ROOT: "artifacts/benchmark/transaction_data/candidate"
-  ARTIFACT_CACHE_ROOT: "artifacts/releases"
+  NODE_VERSION: "20"
+  APP_ENV: ci
 
 jobs:
-  backend-quality:
-    name: Backend lint, format, and static analysis
+  backend:
+    name: Backend quality, tests, and model fixture
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: requirements.lock
+          cache-dependency-path: requirements-dev.lock
 
-      - name: Install dependencies and quality tools
+      - name: Install locked development environment
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.lock
-          python -m pip install -e .
-          python -m pip install black==24.10.0 flake8==7.3.0 mypy==1.20.2
+          python -m pip install -r requirements-dev.lock
+          python -m pip install -e . --no-deps
 
-      - name: Format check
-        run: black --check app.py src tests scripts
-
-      - name: Lint check
-        run: flake8 app.py src tests scripts --max-line-length=120 --extend-ignore=E203,W503
-
-      - name: Static type analysis
+      - name: Verify dependency locks are reproducible
         run: |
-          python -m mypy app.py src/FraudGuard/cloud src/FraudGuard/pipeline/transaction_candidate_pipeline.py \
-            --ignore-missing-imports \
-            --no-strict-optional \
-            --allow-untyped-defs \
-            --check-untyped-defs
+          python -m pip install uv
+          uv pip compile pyproject.toml --universal --python-version 3.11 -o requirements.lock
+          uv pip compile pyproject.toml --extra dev --universal --python-version 3.11 -o requirements-dev.lock
+          git diff --exit-code -- requirements.lock requirements-dev.lock
 
-      - name: Retired legacy dataset guard
-        run: python scripts/check_no_retired_legacy_paths.py
+      - name: Backend format, lint, and type checks
+        run: |
+          black --check app.py src tests scripts
+          flake8 app.py src tests scripts --max-line-length=120 --extend-ignore=E203,W503
+          python -m mypy app.py src/FraudGuard/cloud src/FraudGuard/pipeline \
+            --ignore-missing-imports --no-strict-optional \
+            --allow-untyped-defs --check-untyped-defs
+
+      - name: Backend unit and integration tests
+        run: python -m pytest -p no:cacheprovider
 
       - name: Compile imports
         run: python -m compileall app.py src scripts
 
-  backend-unit-tests:
-    name: Backend unit tests
-    runs-on: ubuntu-latest
-    needs: backend-quality
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Build container smoke model fixture
+        run: python -m scripts.build_ci_model_fixture --output artifacts/ci-model
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/upload-artifact@v4
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-          cache-dependency-path: requirements.lock
+          name: ci-model-fixture
+          path: artifacts/ci-model/
+          if-no-files-found: error
 
-      - name: Install dependencies and package
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.lock
-          python -m pip install -e .
-          python -m pip install pytest==8.4.2
-
-      - name: Unit tests
-        run: python -m pytest -q -p no:cacheprovider
-
-  backend-integration-tests:
-    name: Backend integration and deploy preflight
+  frontend:
+    name: Frontend tests, audit, and production build
     runs-on: ubuntu-latest
-    needs: backend-unit-tests
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-          cache-dependency-path: requirements.lock
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
-      - name: Install dependencies and package
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.lock
-          python -m pip install -e .
-          python -m pip install pytest==8.4.2
+      - name: Install locked frontend dependencies
+        working-directory: frontend
+        run: npm ci
 
-      - name: API integration contract tests
-        run: |
-          python -m pytest -q -p no:cacheprovider \
-            tests/test_core.py::test_transaction_candidate_endpoint_is_feature_flagged_and_batch_safe \
-            tests/test_core.py::test_transaction_mode_readiness_does_not_require_baseline_artifacts \
-            tests/test_core.py::test_transaction_candidate_endpoint_enforces_batch_row_limit \
-            tests/test_core.py::test_service_index_reports_backend_api_surface
+      - name: Validate frontend behavior and samples
+        working-directory: frontend
+        run: npm test
 
-      - name: Fixture predeploy validation
-        run: python scripts/provider_predeploy.py
+      - name: Audit production frontend dependencies
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=moderate
 
-  api-surface-checks:
-    name: Backend API surface checks
+      - name: Typecheck and build frontend
+        working-directory: frontend
+        run: npm run build
+
+  container:
+    name: Production image and live-container smoke
     runs-on: ubuntu-latest
-    needs: backend-integration-tests
+    needs: [backend, frontend]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/download-artifact@v4
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-          cache-dependency-path: requirements.lock
+          name: ci-model-fixture
+          path: artifacts/ci-model
 
-      - name: Install API dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.lock
-          python -m pip install -e .
-          python -m pip install pytest==8.4.2
-
-      - name: Confirm server-rendered frontend is removed
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          removed = [Path("templates/index.html"), Path("templates/result.html")]
-          present = [str(path) for path in removed if path.exists()]
-          if present:
-              raise SystemExit(f"removed frontend templates are still present: {present}")
-          PY
-
-      - name: API surface tests
-        run: |
-          python -m pytest -q -p no:cacheprovider \
-            tests/test_core.py::test_service_index_reports_backend_api_surface \
-            tests/test_core.py::test_transaction_batch_endpoint_requires_server_api_key_when_auth_is_enabled
-
-      - name: API production import check
-        run: |
-          python -m compileall app.py src
-          echo "No server-rendered frontend is packaged; API only."
-
-      - name: Browser smoke tests
-        run: |
-          if test -d tests/browser; then
-            python -m pytest -q tests/browser
-          else
-            echo "No browser smoke suite is present; container smoke verifies served API."
-          fi
-
-  docker-production-image:
-    name: Production Docker image and container smoke
-    runs-on: ubuntu-latest
-    needs: api-surface-checks
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Compute build metadata
+      - name: Compute build time
         id: metadata
-        run: |
-          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+        run: echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
-      - name: Build production Docker image
+      - name: Build production image
         run: |
           docker build \
             --build-arg BUILD_COMMIT_SHA="${GITHUB_SHA}" \
             --build-arg BUILD_TIME="${{ steps.metadata.outputs.build_time }}" \
-            -t fraudguard-api:${GITHUB_SHA} .
+            -t fraudguard:${GITHUB_SHA} .
 
-      - name: Start container and smoke test served API
+      - name: Start and verify the built container
         run: |
           set -euo pipefail
           container_name="fraudguard-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          docker rm -f "$container_name" >/dev/null 2>&1 || true
-
           cleanup() {
             status=$?
-            docker logs "$container_name" >/tmp/fraudguard-container.log 2>&1 || true
+            docker logs "$container_name" > /tmp/fraudguard-container.log 2>&1 || true
             docker rm -f "$container_name" >/dev/null 2>&1 || true
-            if [ "$status" -ne 0 ]; then
-              cat /tmp/fraudguard-container.log || true
-            fi
+            if [ "$status" -ne 0 ]; then cat /tmp/fraudguard-container.log; fi
             exit "$status"
           }
           trap cleanup EXIT
@@ -213,15 +131,14 @@ jobs:
           docker run -d \
             --name "$container_name" \
             -p 8010:8010 \
+            -v "${PWD}/artifacts/ci-model:/tmp/fraudguard-ci-model:ro" \
             -e PORT=8010 \
             -e APP_ENV=ci \
-            -e FRAUD_MODEL_MODE=transaction_candidate \
-            -e AUTH_REQUIRED=true \
-            -e FRAUDGUARD_API_KEY=ci-test-key \
-            fraudguard-api:${GITHUB_SHA}
+            -e TRANSACTION_ARTIFACT_ROOT=/tmp/fraudguard-ci-model \
+            fraudguard:${GITHUB_SHA}
 
           for attempt in $(seq 1 30); do
-            if curl --fail --silent --show-error http://localhost:8010/live >/tmp/live.json; then
+            if curl --fail --silent http://localhost:8010/ready > /tmp/ready.json; then
               break
             fi
             sleep 2
@@ -232,18 +149,27 @@ jobs:
           import os
           import urllib.request
 
-          expected_sha = os.environ["GITHUB_SHA"]
+          def request(path, body=None):
+              data = json.dumps(body).encode() if body is not None else None
+              req = urllib.request.Request(
+                  f"http://localhost:8010{path}",
+                  data=data,
+                  headers={"Content-Type": "application/json"},
+              )
+              with urllib.request.urlopen(req, timeout=10) as response:
+                  return response.headers.get_content_type(), json.loads(response.read())
 
-          with urllib.request.urlopen("http://localhost:8010/live", timeout=10) as response:
-              live = json.loads(response.read().decode("utf-8"))
-          assert live["status"] == "alive", live
-
-          with urllib.request.urlopen("http://localhost:8010/version", timeout=10) as response:
-              version = json.loads(response.read().decode("utf-8"))
-          assert version["commit_sha"] == expected_sha, version
-
+          _, ready = request("/ready")
+          assert ready["status"] == "ready", ready
+          _, version = request("/version")
+          assert version["commit_sha"] == os.environ["GITHUB_SHA"], version
+          _, schema = request("/schema/transactions")
+          row = {"TransactionDT": 86400, "TransactionAmt": 57.25}
+          _, result = request("/predict/transactions", {"rows": [row]})
+          assert result["row_count"] == 1, result
+          _, dashboard = request("/dashboard")
+          assert "transaction_count" in dashboard, dashboard
           with urllib.request.urlopen("http://localhost:8010/", timeout=10) as response:
-              service_index = json.loads(response.read().decode("utf-8"))
-          assert service_index["service"] == "FraudGuard API", service_index
-          assert service_index["endpoints"]["transaction_batch_prediction"] == "/predict/transactions", service_index
+              html = response.read().decode()
+          assert '<div id="root"></div>' in html
           PY

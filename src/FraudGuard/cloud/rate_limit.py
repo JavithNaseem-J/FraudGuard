@@ -78,8 +78,12 @@ class CloudRateLimiter:
                 ),
             )
         except Exception as error:
-            logger.warning("Upstash rate limit check failed: %s", error)
             allowed = not self.settings.upstash_fail_closed
+            logger.warning(
+                "provider=upstash operation=rate_limit outcome=%s category=%s",
+                "fail_open" if allowed else "fail_closed",
+                error.__class__.__name__,
+            )
             return RateLimitResult(
                 allowed=allowed,
                 mode="upstash_error",

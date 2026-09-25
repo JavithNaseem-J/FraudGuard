@@ -1,67 +1,87 @@
 from __future__ import annotations
 
+import json
+import math
 import os
 import time
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
-from secrets import compare_digest
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
+
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from FraudGuard import logger
 from FraudGuard.cloud.artifacts import ensure_transaction_release
-from FraudGuard.cloud.persistence import PredictionRecord, SupabasePersistence
-from FraudGuard.cloud.rate_limit import CloudRateLimiter
-from FraudGuard.cloud.settings import load_settings
-from FraudGuard.pipeline.transaction_candidate_pipeline import (
-    TransactionCandidatePipeline,
+from FraudGuard.cloud.persistence import (
+    PredictionRecord,
+    SupabasePersistence,
+    utc_now_iso,
 )
-
+from FraudGuard.cloud.rate_limit import CloudRateLimiter
+from FraudGuard.cloud.settings import AppSettings, load_settings
+from FraudGuard.pipeline.transaction_pipeline import TransactionPipeline
 
 settings = load_settings()
 STARTUP_BUILD_TIME = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+FRONTEND_DIST_DIR = Path(__file__).resolve().parent / "frontend" / "dist"
+FRONTEND_INDEX = FRONTEND_DIST_DIR / "index.html"
+FRONTEND_ASSETS_DIR = FRONTEND_DIST_DIR / "assets"
+FRONTEND_SAMPLE_CSV = FRONTEND_DIST_DIR / "sample_transactions.csv"
 
 
-def _safe_error_message(error: Exception) -> str:
+class TransactionBatchInput(BaseModel):
+    rows: list[dict[str, Any]] = Field(..., min_length=1)
+
+
+def _safe_error_category(error: Exception) -> str:
     return error.__class__.__name__
 
 
-def _load_transaction_candidate(app: FastAPI) -> None:
-    artifact_root, manifest = ensure_transaction_release(settings)
-    app.state.transaction_candidate = TransactionCandidatePipeline(
-        artifact_root=artifact_root
-    )
-    release_metadata = app.state.transaction_candidate.release_metadata()
+def _log_event(level: str, event: str, **fields: Any) -> None:
+    payload = {"event": event, **fields}
+    getattr(logger, level)(json.dumps(payload, sort_keys=True, default=str))
+
+
+def _release_id(app_settings: AppSettings, manifest: Any | None) -> str:
     if manifest is not None:
-        release_metadata.update(
-            {
-                "release_id": manifest.release_id,
-                "artifact_manifest_model_version": manifest.model_version,
-            }
-        )
-    persisted_release = app.state.persistence.persist_model_release(
-        model_version=app.state.transaction_candidate.model_version,
-        model_name=app.state.transaction_candidate.model_name,
-        artifact_schema_version=int(
-            app.state.transaction_candidate.metadata["artifact_schema_version"]
-        ),
-        threshold=app.state.transaction_candidate.threshold,
-        score_is_calibrated=app.state.transaction_candidate.score_is_calibrated,
-        metadata=release_metadata,
+        return str(manifest.release_id)
+    return app_settings.transaction_artifact_release_id or "local"
+
+
+def _load_transaction_model(app: FastAPI) -> None:
+    artifact_root, manifest = ensure_transaction_release(app.state.settings)
+    model = TransactionPipeline(artifact_root=artifact_root)
+    release_id = _release_id(app.state.settings, manifest)
+    app.state.transaction_model = model
+    app.state.release_id = release_id
+
+    metadata = model.release_metadata()
+    if manifest is not None:
+        metadata["artifact_manifest_model_version"] = manifest.model_version
+    persisted = app.state.persistence.persist_model_release(
+        release_id=release_id,
+        model_version=model.model_version,
+        model_name=model.model_name,
+        artifact_schema_version=int(model.metadata["artifact_schema_version"]),
+        threshold=model.threshold,
+        score_is_calibrated=model.score_is_calibrated,
+        metadata=metadata,
     )
-    logger.info(
-        "Transaction model loaded | version=%s | threshold=%.4f | features=%s | release_id=%s | release_persisted=%s",
-        app.state.transaction_candidate.model_version,
-        app.state.transaction_candidate.threshold,
-        len(app.state.transaction_candidate.feature_names),
-        getattr(
-            manifest, "release_id", settings.transaction_artifact_release_id or "local"
-        ),
-        persisted_release,
+    _log_event(
+        "info",
+        "model_loaded",
+        release_id=release_id,
+        model_version=model.model_version,
+        threshold=model.threshold,
+        feature_count=len(model.feature_names),
+        persistence_mode=app.state.persistence.mode,
+        release_persisted=persisted,
     )
 
 
@@ -70,40 +90,30 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.persistence = SupabasePersistence(settings)
     app.state.rate_limiter = CloudRateLimiter(settings)
-    app.state.transaction_candidate = None
+    app.state.transaction_model = None
+    app.state.release_id = settings.transaction_artifact_release_id or "local"
     app.state.readiness_error = None
     try:
-        _load_transaction_candidate(app)
+        _load_transaction_model(app)
     except Exception as error:
-        app.state.readiness_error = _safe_error_message(error)
-        logger.error(
-            "Model startup failed | model_mode=%s | category=%s",
-            settings.model_mode,
-            app.state.readiness_error,
+        app.state.readiness_error = _safe_error_category(error)
+        _log_event(
+            "error",
+            "model_startup_failed",
+            category=app.state.readiness_error,
         )
     yield
 
 
 app = FastAPI(
     title="FraudGuard API",
-    description="Cloud-ready fraud scoring API",
-    version="1.1.0",
+    description="Production-style transaction fraud scoring demonstration",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
-
-class FeedbackInput(BaseModel):
-    prediction_id: str
-    confirmed_label: int = Field(..., ge=0, le=1)
-    reviewer_decision: str | None = None
-    feedback_source: str = "manual"
-
-
-class TransactionBatchInput(BaseModel):
-    rows: list[dict[str, Any]] = Field(..., min_length=1, max_length=1000)
-
-
-PROTECTED_PATHS = {"/predict/transactions", "/feedback"}
+if FRONTEND_ASSETS_DIR.is_dir():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_ASSETS_DIR), name="assets")
 
 
 def client_key(request: Request) -> str:
@@ -115,102 +125,62 @@ def client_key(request: Request) -> str:
     return "unknown"
 
 
-def _extract_api_key(request: Request) -> str:
-    header_key = request.headers.get("x-api-key", "")
-    if header_key:
-        return header_key.strip()
-    authorization = request.headers.get("authorization", "")
-    prefix = "bearer "
-    if authorization.lower().startswith(prefix):
-        return authorization[len(prefix) :].strip()
-    return ""
-
-
-def _audit_security_event(request: Request, outcome: str) -> None:
-    persistence = getattr(request.app.state, "persistence", None)
-    if persistence is None:
-        return
-    persistence.persist_audit_event(
-        event_type="protected_request_denied",
-        entity_id=getattr(request.state, "request_id", None),
-        metadata={
-            "path": request.url.path,
-            "method": request.method,
-            "security_outcome": outcome,
-            "client": client_key(request),
-        },
-    )
-
-
-def require_api_key(request: Request) -> None:
-    app_settings = getattr(request.app.state, "settings", settings)
-    if not app_settings.auth_required:
-        return
-    if not app_settings.fraudguard_api_key:
-        logger.error("API authentication is required but no API key is configured")
-        raise HTTPException(
-            status_code=503,
-            detail="API authentication is not configured",
-        )
-
-    supplied_key = _extract_api_key(request)
-    if not supplied_key:
-        _audit_security_event(request, "missing_api_key")
-        logger.warning(
-            "request_id=%s path=%s security_outcome=missing_api_key",
-            getattr(request.state, "request_id", "unknown"),
-            request.url.path,
-        )
-        raise HTTPException(status_code=401, detail="API key required")
-    if not compare_digest(supplied_key, app_settings.fraudguard_api_key):
-        _audit_security_event(request, "invalid_api_key")
-        logger.warning(
-            "request_id=%s path=%s security_outcome=invalid_api_key",
-            getattr(request.state, "request_id", "unknown"),
-            request.url.path,
-        )
-        raise HTTPException(status_code=403, detail="Invalid API key")
-
-
 @app.middleware("http")
-async def add_request_id(request: Request, call_next):
+async def add_request_context(request: Request, call_next):
     request_id = request.headers.get("x-request-id") or str(uuid4())
     request.state.request_id = request_id
+    started = time.perf_counter()
     response = await call_next(request)
     response.headers["x-request-id"] = request_id
+    _log_event(
+        "info",
+        "http_request",
+        request_id=request_id,
+        path=request.url.path,
+        method=request.method,
+        status=response.status_code,
+        latency_ms=round((time.perf_counter() - started) * 1000, 2),
+    )
     return response
 
 
 @app.middleware("http")
-async def enforce_request_size(request: Request, call_next):
-    app_settings = getattr(request.app.state, "settings", settings)
-    content_length = request.headers.get("content-length")
-    if content_length and app_settings.max_request_bytes > 0:
-        try:
-            byte_count = int(content_length)
-        except ValueError:
-            byte_count = 0
-        if byte_count > app_settings.max_request_bytes:
-            logger.warning(
-                "request_id=%s path=%s security_outcome=request_too_large bytes=%s limit=%s",
-                getattr(request.state, "request_id", "unknown"),
-                request.url.path,
-                byte_count,
-                app_settings.max_request_bytes,
-            )
-            return JSONResponse(
-                status_code=413,
-                content={
-                    "detail": "Request body too large",
-                    "max_request_bytes": app_settings.max_request_bytes,
-                },
-            )
+async def enforce_prediction_request_size(request: Request, call_next):
+    if request.method == "POST" and request.url.path == "/predict/transactions":
+        app_settings = getattr(request.app.state, "settings", settings)
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > app_settings.max_request_bytes:
+                    return _request_too_large(app_settings)
+            except ValueError:
+                return JSONResponse(
+                    status_code=400, content={"detail": "Invalid Content-Length header"}
+                )
+        body = await request.body()
+        if len(body) > app_settings.max_request_bytes:
+            return _request_too_large(app_settings)
     return await call_next(request)
+
+
+def _request_too_large(app_settings: AppSettings) -> JSONResponse:
+    return JSONResponse(
+        status_code=413,
+        content={
+            "detail": "Request body too large",
+            "max_request_bytes": app_settings.max_request_bytes,
+        },
+    )
 
 
 @app.get("/live")
 async def liveness():
     return {"status": "alive", "service": "FraudGuard API", "env": settings.app_env}
+
+
+@app.get("/health")
+async def health():
+    return await liveness()
 
 
 @app.get("/version")
@@ -231,94 +201,202 @@ async def version():
 @app.get("/ready")
 async def readiness(request: Request):
     app_settings = getattr(request.app.state, "settings", settings)
-    candidate = getattr(request.app.state, "transaction_candidate", None)
-    readiness_error = getattr(request.app.state, "readiness_error", None)
-    if candidate is None:
+    model = getattr(request.app.state, "transaction_model", None)
+    if model is None:
         raise HTTPException(
             status_code=503,
             detail={
                 "status": "not_ready",
-                "model_mode": app_settings.model_mode,
-                "candidate_model_loaded": candidate is not None,
-                "reason": readiness_error or "transaction artifacts unavailable",
+                "model_loaded": False,
+                "reason": getattr(
+                    request.app.state,
+                    "readiness_error",
+                    "transaction artifacts unavailable",
+                ),
             },
         )
-
-    candidate_metadata = candidate.readiness_metadata()
-    candidate_metadata["release_id"] = (
-        app_settings.rollback_release_id
-        or app_settings.transaction_artifact_release_id
-        or "local"
-    )
     return {
         "status": "ready",
         "service": "FraudGuard API",
-        "model_mode": app_settings.model_mode,
         "model_loaded": True,
-        "candidate_model_loaded": True,
-        "threshold": candidate.threshold,
-        "model_version": candidate.model_version,
-        "transaction_candidate": candidate_metadata,
+        "release_id": getattr(request.app.state, "release_id", "local"),
+        "model": model.readiness_metadata(),
         "persistence": request.app.state.persistence.mode,
         "rate_limit": request.app.state.rate_limiter.mode,
+        "rate_limit_policy": {
+            "requests": app_settings.rate_limit_requests,
+            "window_seconds": app_settings.rate_limit_window_seconds,
+        },
     }
-
-
-@app.get("/health")
-async def health_check(request: Request):
-    return await readiness(request)
 
 
 @app.get("/schema/transactions")
 async def transaction_schema(request: Request):
     app_settings = getattr(request.app.state, "settings", settings)
-    candidate = getattr(request.app.state, "transaction_candidate", None)
-    if candidate is None:
-        readiness_error = getattr(request.app.state, "readiness_error", None)
-        raise HTTPException(
-            status_code=503,
-            detail=readiness_error or "Transaction candidate model is not ready",
-        )
-
-    candidate_metadata = candidate.readiness_metadata()
+    model = getattr(request.app.state, "transaction_model", None)
+    if model is None:
+        raise HTTPException(status_code=503, detail="Transaction model is not ready")
     return {
-        "model_mode": app_settings.model_mode,
-        "model_version": candidate.model_version,
-        "model_name": candidate.model_name,
-        "threshold": candidate.threshold,
-        "score_is_calibrated": candidate.score_is_calibrated,
+        "release_id": getattr(request.app.state, "release_id", "local"),
+        "model_version": model.model_version,
+        "model_name": model.model_name,
+        "threshold": model.threshold,
+        "score_is_calibrated": model.score_is_calibrated,
         "max_batch_rows": app_settings.max_batch_rows,
-        "feature_count": len(candidate.feature_names),
-        "feature_names": candidate.feature_names,
-        "numeric_features": candidate.metadata.get("numeric_features", []),
-        "categorical_features": candidate.metadata.get("categorical_features", []),
-        "schema_risks": candidate_metadata.get("schema_risks", []),
+        "feature_count": len(model.feature_names),
+        "feature_names": model.feature_names,
+        "numeric_features": model.metadata.get("numeric_features", []),
+        "categorical_features": model.metadata.get("categorical_features", []),
     }
 
 
-@app.get("/")
-async def service_index(request: Request):
-    app_settings = getattr(request.app.state, "settings", settings)
+@app.get("/api")
+async def service_index():
     return {
         "service": "FraudGuard API",
         "status": "ok",
-        "model_mode": app_settings.model_mode,
-        "authentication": "required" if app_settings.auth_required else "disabled",
+        "access": "anonymous_rate_limited_demo",
         "documentation": "/docs",
-        "health": {
-            "liveness": "/live",
-            "readiness": "/ready",
-            "version": "/version",
-        },
+        "health": {"liveness": "/live", "readiness": "/ready", "version": "/version"},
         "endpoints": {
             "transaction_schema": "/schema/transactions",
             "transaction_batch_prediction": "/predict/transactions",
-            "feedback": "/feedback",
+            "dashboard": "/dashboard",
         },
     }
 
 
-async def _score_transaction_batch(request: Request, payload: TransactionBatchInput):
+@app.get("/dashboard")
+async def dashboard(request: Request):
+    app_settings = getattr(request.app.state, "settings", settings)
+    persistence = request.app.state.persistence
+    now = datetime.now(UTC)
+    window_start = now - timedelta(days=app_settings.dashboard_retention_days)
+    fetch_limit = app_settings.dashboard_row_limit + 1
+    records = persistence.fetch_recent_predictions(
+        cutoff=window_start.isoformat(), limit=fetch_limit
+    )
+    truncated = len(records) > app_settings.dashboard_row_limit
+    records = records[: app_settings.dashboard_row_limit]
+    return _dashboard_snapshot(
+        records,
+        persistence_mode=persistence.mode,
+        window_start=window_start,
+        window_end=now,
+        truncated=truncated,
+    )
+
+
+def _dashboard_snapshot(
+    records: list[dict[str, Any]],
+    *,
+    persistence_mode: str,
+    window_start: datetime,
+    window_end: datetime,
+    truncated: bool,
+) -> dict[str, Any]:
+    flagged = [record for record in records if record.get("decision") == "Yes"]
+    total = len(records)
+    flagged_amount = sum(
+        _finite_number(record.get("transaction_amount")) or 0.0 for record in flagged
+    )
+    score_total = sum(_finite_number(record.get("score")) or 0.0 for record in records)
+
+    daily: dict[str, dict[str, Any]] = {}
+    for record in records:
+        day = str(record.get("created_at", ""))[:10]
+        if not day:
+            continue
+        item = daily.setdefault(
+            day, {"date": day, "transactions": 0, "flagged": 0, "fraud_rate": 0.0}
+        )
+        item["transactions"] += 1
+        item["flagged"] += int(record.get("decision") == "Yes")
+    for item in daily.values():
+        item["fraud_rate"] = round((item["flagged"] / item["transactions"]) * 100, 2)
+
+    distribution = []
+    for index in range(10):
+        lower = index / 10
+        upper = (index + 1) / 10
+        count = sum(
+            1
+            for record in records
+            if (score := _finite_number(record.get("score"))) is not None
+            and score >= lower
+            and (score < upper or (index == 9 and score <= 1))
+        )
+        distribution.append({"score": f"{lower:.1f}", "count": count})
+
+    recent_flagged = [
+        {
+            "prediction_id": str(record.get("prediction_id", ""))[:8],
+            "created_at": record.get("created_at"),
+            "amount": _finite_number(record.get("transaction_amount")),
+            "score": _finite_number(record.get("score")) or 0.0,
+            "threshold": _finite_number(record.get("threshold")) or 0.0,
+            "decision": "Yes",
+            "release_id": record.get("release_id") or "unknown",
+        }
+        for record in flagged[:5]
+    ]
+    latest = records[0] if records else {}
+    return {
+        "persistence": persistence_mode,
+        "window": {
+            "start": window_start.isoformat(),
+            "end": window_end.isoformat(),
+            "retention_days": (window_end - window_start).days,
+        },
+        "truncated": truncated,
+        "transaction_count": total,
+        "flagged_count": len(flagged),
+        "fraud_rate": round((len(flagged) / total) * 100, 2) if total else 0.0,
+        "flagged_amount": round(flagged_amount, 2),
+        "average_score": round(score_total / total, 4) if total else 0.0,
+        "threshold": _finite_number(latest.get("threshold")) or 0.0,
+        "last_updated": latest.get("created_at"),
+        "model_version": latest.get("model_version"),
+        "release_id": latest.get("release_id"),
+        "daily_volume": [daily[key] for key in sorted(daily)],
+        "score_distribution": distribution,
+        "recent_flagged": recent_flagged,
+    }
+
+
+def _finite_number(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+@app.get("/", include_in_schema=False)
+async def frontend_index():
+    if FRONTEND_INDEX.is_file():
+        return FileResponse(FRONTEND_INDEX)
+    return await service_index()
+
+
+@app.get("/score", include_in_schema=False)
+async def frontend_score_page():
+    if FRONTEND_INDEX.is_file():
+        return FileResponse(FRONTEND_INDEX)
+    raise HTTPException(status_code=404, detail="Frontend build is not available")
+
+
+@app.get("/sample_transactions.csv", include_in_schema=False)
+async def frontend_sample_transactions():
+    if FRONTEND_SAMPLE_CSV.is_file():
+        return FileResponse(FRONTEND_SAMPLE_CSV, media_type="text/csv")
+    raise HTTPException(
+        status_code=404, detail="Sample transaction data is unavailable"
+    )
+
+
+@app.post("/predict/transactions")
+async def predict_transaction_batch(request: Request, payload: TransactionBatchInput):
     app_settings = getattr(request.app.state, "settings", settings)
     if len(payload.rows) > app_settings.max_batch_rows:
         raise HTTPException(
@@ -328,61 +406,72 @@ async def _score_transaction_batch(request: Request, payload: TransactionBatchIn
 
     limiter_result = request.app.state.rate_limiter.check(client_key(request))
     if not limiter_result.allowed:
+        _log_event(
+            "warning",
+            "prediction_rate_limited",
+            request_id=request.state.request_id,
+            rate_limit_mode=limiter_result.mode,
+            outcome=limiter_result.reason,
+        )
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
 
-    candidate = getattr(request.app.state, "transaction_candidate", None)
-    if candidate is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Transaction candidate model is not ready",
-        )
+    model = getattr(request.app.state, "transaction_model", None)
+    if model is None:
+        raise HTTPException(status_code=503, detail="Transaction model is not ready")
 
     started = time.perf_counter()
     request_id = request.state.request_id
+    release_id = getattr(request.app.state, "release_id", "local")
     try:
-        batch_result = candidate.predict_rows(payload.rows)
+        batch_result = model.predict_rows(payload.rows)
         latency_ms = (time.perf_counter() - started) * 1000
+        created_at = utc_now_iso()
         response_results = []
-        persisted_count = 0
-
-        for result in batch_result["results"]:
+        records: list[PredictionRecord] = []
+        for row, result in zip(payload.rows, batch_result["results"], strict=True):
             prediction_id = str(uuid4())
-            record = PredictionRecord(
-                prediction_id=prediction_id,
-                request_id=request_id,
-                model_version=batch_result["model_version"],
-                model_mode="transaction_candidate",
-                score=result["fraud_score"],
-                threshold=result["threshold_used"],
-                decision=result["fraud_status"],
-                score_is_calibrated=result["score_is_calibrated"],
-                latency_ms=latency_ms,
-                metadata={
-                    "row_index": result["row_index"],
-                    "model_mode": "transaction_candidate",
-                    "model_name": batch_result["model_name"],
-                    "feature_count": batch_result["feature_count"],
-                    "ignored_features": batch_result["ignored_features"],
-                    "rate_limit_mode": limiter_result.mode,
-                },
+            records.append(
+                PredictionRecord(
+                    prediction_id=prediction_id,
+                    request_id=request_id,
+                    model_version=batch_result["model_version"],
+                    release_id=release_id,
+                    transaction_amount=_transaction_amount(row),
+                    score=result["fraud_score"],
+                    threshold=result["threshold_used"],
+                    decision=result["fraud_status"],
+                    score_is_calibrated=result["score_is_calibrated"],
+                    latency_ms=latency_ms,
+                    created_at=created_at,
+                )
             )
-            persisted = request.app.state.persistence.persist_prediction(record)
-            persisted_count += int(persisted)
-            response_results.append({"prediction_id": prediction_id, **result})
+            response_results.append(
+                {"prediction_id": prediction_id, "release_id": release_id, **result}
+            )
 
-        logger.info(
-            "request_id=%s model_mode=transaction_candidate rows=%s "
-            "model_version=%s latency_ms=%.2f persisted=%s status=success",
-            request_id,
-            len(payload.rows),
-            batch_result["model_version"],
-            latency_ms,
-            persisted_count,
+        persisted_count = request.app.state.persistence.persist_predictions(records)
+        if persisted_count:
+            cutoff = datetime.now(UTC) - timedelta(
+                days=app_settings.dashboard_retention_days
+            )
+            request.app.state.persistence.delete_predictions_before(cutoff.isoformat())
+
+        _log_event(
+            "info",
+            "prediction_completed",
+            request_id=request_id,
+            release_id=release_id,
+            model_version=batch_result["model_version"],
+            row_count=len(payload.rows),
+            latency_ms=round(latency_ms, 2),
+            persistence_mode=request.app.state.persistence.mode,
+            persisted_count=persisted_count,
+            rate_limit_mode=limiter_result.mode,
+            status="success",
         )
-
         return {
             "request_id": request_id,
-            "model_mode": "transaction_candidate",
+            "release_id": release_id,
             "model_version": batch_result["model_version"],
             "model_name": batch_result["model_name"],
             "row_count": len(response_results),
@@ -394,42 +483,31 @@ async def _score_transaction_batch(request: Request, payload: TransactionBatchIn
             "persisted_count": persisted_count,
             "rate_limit": limiter_result.mode,
         }
-    except ValueError as error:
-        logger.warning(
-            "request_id=%s model_mode=transaction_candidate status=validation_error category=schema_validation",
-            request_id,
+    except (TypeError, ValueError) as error:
+        _log_event(
+            "warning",
+            "prediction_validation_failed",
+            request_id=request_id,
+            release_id=release_id,
+            category="schema_validation",
         )
         raise HTTPException(status_code=422, detail=str(error)) from error
     except Exception as error:
-        logger.error(
-            "request_id=%s model_mode=transaction_candidate status=error category=prediction_error error=%s",
-            request_id,
-            error,
+        _log_event(
+            "error",
+            "prediction_failed",
+            request_id=request_id,
+            release_id=release_id,
+            category=_safe_error_category(error),
         )
         raise HTTPException(status_code=500, detail="Internal server error") from error
 
 
-@app.post("/predict/transactions")
-async def predict_transaction_batch(request: Request, payload: TransactionBatchInput):
-    require_api_key(request)
-    return await _score_transaction_batch(request, payload)
-
-
-@app.post("/feedback")
-async def submit_feedback(request: Request, feedback: FeedbackInput):
-    require_api_key(request)
-    persisted = request.app.state.persistence.persist_feedback(
-        prediction_id=feedback.prediction_id,
-        confirmed_label=feedback.confirmed_label,
-        reviewer_decision=feedback.reviewer_decision,
-        feedback_source=feedback.feedback_source,
-        metadata={"request_id": request.state.request_id},
-    )
-    return {
-        "prediction_id": feedback.prediction_id,
-        "persisted": persisted,
-        "persistence": request.app.state.persistence.mode,
-    }
+def _transaction_amount(row: dict[str, Any]) -> float | None:
+    for field in ("TransactionAmt", "Transaction_Amount", "amount"):
+        if field in row:
+            return _finite_number(row[field])
+    return None
 
 
 if __name__ == "__main__":

@@ -1,3 +1,14 @@
+FROM node:20-slim AS frontend-builder
+
+WORKDIR /frontend
+
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY frontend/ ./
+RUN npm run build
+
+
 FROM python:3.11-slim
 
 ARG BUILD_COMMIT_SHA=unknown
@@ -19,6 +30,7 @@ COPY requirements.lock ./
 COPY pyproject.toml ./
 RUN apt-get update && apt-get install -y \
     curl \
+    libgomp1 \
     gcc \
     g++ \
     libc-dev \
@@ -30,9 +42,11 @@ RUN apt-get update && apt-get install -y \
 # Create non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-# Copy application and artifacts
+# Copy the API and the compiled frontend. The final image contains no Node.js
+# runtime or frontend development dependencies.
 COPY src/ ./src/
 COPY app.py .
+COPY --from=frontend-builder /frontend/dist ./frontend/dist
 
 # Set permissions
 RUN mkdir -p /app/runtime/model-releases \
@@ -41,9 +55,9 @@ RUN mkdir -p /app/runtime/model-releases \
 # Switch to non-root user
 USER appuser
 
-# Healthcheck uses liveness; readiness is exposed separately at /ready.
+# Readiness is the traffic and deployment gate.
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-8000}/live || exit 1
+    CMD curl -f http://localhost:${PORT:-8000}/ready || exit 1
 
 EXPOSE 8000
 

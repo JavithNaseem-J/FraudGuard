@@ -2,23 +2,23 @@ stages:
   transaction_contract:
     cmd: python -m scripts.transaction_data_contract
     deps:
-      - src/FraudGuard/data/ieee_cis_adapter.py
       - src/FraudGuard/data/transaction_benchmark.py
       - scripts/transaction_data_contract.py
       - data/train_transaction.csv
     outs:
       - artifacts/benchmark/transaction_data/contract_report.json
 
-  transaction_smoke_benchmark:
-    cmd: python -m scripts.transaction_smoke_benchmark
+  transaction_benchmark:
+    cmd: python -m scripts.transaction_benchmark --sample-rows 75000
     deps:
-      - src/FraudGuard/data/ieee_cis_adapter.py
       - src/FraudGuard/data/transaction_benchmark.py
       - src/FraudGuard/utils/costs.py
-      - scripts/transaction_smoke_benchmark.py
+      - scripts/transaction_benchmark.py
       - data/train_transaction.csv
     outs:
       - artifacts/benchmark/transaction_data/train.csv
       - artifacts/benchmark/transaction_data/validation.csv
       - artifacts/benchmark/transaction_data/test.csv
       - artifacts/benchmark/transaction_data/smoke_benchmark_report.json
+      - artifacts/benchmark/transaction_data/strong_benchmark_report.json
+      - artifacts/benchmark/transaction_data/evaluated-model

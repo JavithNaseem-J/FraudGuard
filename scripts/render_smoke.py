@@ -35,12 +35,9 @@ def _request(
     *,
     method: str = "GET",
     body: dict | None = None,
-    api_key: str = "",
 ):
     data = json.dumps(body).encode("utf-8") if body is not None else None
     headers = {"Content-Type": "application/json"}
-    if api_key:
-        headers["x-api-key"] = api_key
     request = urllib.request.Request(url, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=15) as response:
@@ -56,7 +53,6 @@ def _request(
 
 def main() -> int:
     base_url = os.environ["PUBLIC_BASE_URL"].rstrip("/")
-    api_key = os.environ.get("FRAUDGUARD_API_KEY", "")
     expected_commit_sha = os.environ.get("EXPECTED_COMMIT_SHA", "").strip()
     last_error = "not started"
 
@@ -104,10 +100,13 @@ def main() -> int:
         f"{base_url}/predict/transactions",
         method="POST",
         body=payload,
-        api_key=api_key,
     )
     if status != 200 or body.get("row_count") != 1:
         print(f"Render prediction smoke failed: HTTP {status}: {body}")
+        return 1
+    status, dashboard = _request(f"{base_url}/dashboard")
+    if status != 200 or "transaction_count" not in dashboard:
+        print(f"Render dashboard smoke failed: HTTP {status}: {dashboard}")
         return 1
     print("Render smoke test passed")
     return 0

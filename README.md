@@ -1,126 +1,266 @@
 # FraudGuard
 
-FraudGuard is a tabular transaction-fraud project with a FastAPI serving API, transaction-data benchmark workflow, immutable model release handling, and free-tier cloud deployment configuration for Render, Supabase, Upstash Redis, and Evidently OSS.
+FraudGuard is a production-style transaction fraud scoring demonstration. It
+shows how to train, validate, package, serve, monitor, and deploy an imbalanced
+tabular classifier without claiming to be an enterprise banking platform.
 
-Production serving uses the transaction model path. The older single-CSV baseline is retained only as historical comparison evidence and is not required for production startup, CI, DVC, Render, or predeploy checks.
+The deployed shape is deliberately small:
 
-## Production Path
-
-1. Train or select a transaction-only model package from local transaction data.
-2. Validate the package contract and write a manifest with file sizes and SHA-256 checksums.
-3. Publish the immutable release to private Supabase Storage.
-4. Configure Render with `FRAUD_MODEL_MODE=transaction_candidate` and `TRANSACTION_ARTIFACT_RELEASE_ID`.
-5. On startup, the API downloads or reuses the verified cached release, validates integrity, loads the model, and exposes readiness only after the selected release is usable.
-6. Authenticated `/predict/transactions` requests are rate-limited through Upstash and can persist sanitized prediction metadata to Supabase.
-7. Evidently batch jobs can produce drift and delayed-label performance reports from sanitized records.
-
-## Current Transaction Model Evidence
-
-The latest bounded transaction-only candidate run used 75,000 labeled rows from `train_transaction.csv` and evaluated on a 15,000-row internal labeled split. Identity side-table fields are deferred for a future model version.
-
-| Metric | Value |
-| --- | ---: |
-| Average precision / PR-AUC | 0.7090 |
-| ROC-AUC | 0.9401 |
-| Precision at threshold | 0.2265 |
-| Recall at threshold | 0.8218 |
-| F1 at threshold | 0.3551 |
-| Brier score | 0.0227 |
-| Cost-weighted average loss | 0.1716 |
-| Feature count | 392 |
-
-There is no public test target in this workspace, so public test performance is not claimed.
-
-## Local Setup
-
-Use Python 3.9-3.11 for the locked dependency set.
-
-`pyproject.toml` is the package metadata source. `requirements.lock` is the committed install lock used by local setup, CI, and Docker builds. When dependencies change, regenerate and commit `requirements.lock` in the same change:
-
-```bash
-poetry lock
-poetry export -f requirements.txt --output requirements.lock --without-hashes
+```text
+Browser -> React -> same-origin FastAPI -> verified model release
+                                      |-> Supabase sanitized predictions
+                                      |-> Upstash request counters
 ```
 
-```bash
-python -m pip install -r requirements.lock
-python -m pip install -e .
-pytest -q -p no:cacheprovider
+One Render Docker service serves both the compiled React application and the
+FastAPI API. Raw transaction rows, uploaded files, card/customer/device
+identifiers, and provider credentials are never persisted by the application.
+
+## What is demonstrated
+
+- Transaction-only model training from `train_transaction.csv`
+- Deterministic chronological 70/15/15 train/validation/test periods
+- Validation-only threshold selection with a documented 20:1 false-negative
+  cost assumption and sensitivity at 10:1, 20:1, 50:1, and 100:1
+- An untouched chronological test-period report with imbalance-aware metrics
+- Promotion gates and immutable model bundles with SHA-256 checksums
+- Anonymous public demo scoring bounded by 1 MiB requests, 100 rows per batch,
+  and five requests per 60 seconds per client by default
+- Server-only Supabase persistence and a 30-day dashboard snapshot
+- Upstash distributed rate limiting with an explicit local-memory fallback
+- Lightweight Evidently output monitoring using sanitized fields only
+- Exact-commit GitHub Actions deployment to Render
+
+## Deliberate limitations
+
+This is not a bank-ready fraud platform. It does not implement authentication,
+tenant isolation, investigator case management, payment blocking, streaming
+ingestion, online feature computation, automatic retraining, regulatory
+retention, disaster recovery, or paid uptime guarantees. Model scores are not
+presented as calibrated fraud probabilities. The 20:1 cost ratio is a demo
+assumption, not verified bank economics.
+
+Render free services can cold-start. The UI displays loading/retry states, but
+the project makes no availability guarantee.
+
+## Repository structure
+
+```text
+app.py                         FastAPI entry point and static frontend serving
+frontend/                      React, TypeScript, Vite, and Tailwind application
+src/FraudGuard/cloud/          Settings, artifacts, persistence, rate limiting
+src/FraudGuard/data/           Transaction-only preparation and evaluation
+src/FraudGuard/pipeline/       Verified transaction-model inference
+src/FraudGuard/monitoring/     Sanitized Evidently output reports
+scripts/                       Training, release, monitoring, cleanup, smoke tools
+supabase/migrations/           Reproducible database schema source
+tests/                         Backend, ML-integrity, and API regression tests
+dvc.yaml                       Reproducible bounded ML pipeline
 ```
 
-Validate the active transaction data contract:
+Raw `data/`, generated `artifacts/`, local Supabase state, environments,
+logs, tool output, and secrets remain untracked.
 
-```bash
-python scripts/transaction_data_contract.py
+## Local setup
+
+Python 3.11 or 3.12 and Node 20 are supported.
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements-dev.lock
+python -m pip install -e . --no-deps
+
+Copy-Item .env.example .env
+cd frontend
+npm ci
+npm run build
+cd ..
+python app.py
 ```
 
-Validate a local transaction model package:
+Open <http://127.0.0.1:8000>. Without Supabase and Upstash credentials, the
+service starts in explicit `local_noop` persistence and `local_memory`
+rate-limit modes. A valid local bundle must exist at
+`artifacts/benchmark/transaction_data/model`, or configure an immutable
+remote release.
 
-```bash
-python scripts/publish_model_release.py --artifact-root artifacts/benchmark/transaction_data/candidate --release-id local-check --local-only
+For frontend development:
+
+```powershell
+# Terminal 1
+python app.py
+
+# Terminal 2
+cd frontend
+npm run dev
 ```
 
-Run deployment preflight:
+Vite proxies `/api/*` to `VITE_API_URL`.
 
-```bash
-python scripts/provider_predeploy.py
+## Database setup
+
+Apply all files in `supabase/migrations/` in numeric order. Migration
+`004_simplified_demo_predictions.sql` narrows persistence to:
+
+- prediction and request IDs;
+- timestamp and transaction amount;
+- score, threshold, and decision;
+- calibration flag and latency;
+- model version and immutable release ID.
+
+The service-role key is backend-only. Never place it in `VITE_*` variables or
+browser code. The dashboard reads Supabase through `GET /dashboard`; the
+browser never queries Supabase directly.
+
+Dashboard reads are limited to the newest 10,000 records from the preceding 30
+days. The response reports when it is truncated. Refresh fetches a new server
+snapshot. Double-click Clear only resets the current browser view.
+
+Retention cleanup is best-effort after persisted scoring. The owner can also run:
+
+```powershell
+python -m scripts.cleanup_predictions --older-than-days 30 --confirm
+# or, intentionally:
+python -m scripts.cleanup_predictions --all --confirm
 ```
 
-## Cloud Deployment
+There is no public deletion endpoint.
 
-Render reads `render.yaml`. Required protected values include:
+## Training and evaluation
 
-- `FRAUDGUARD_API_KEY`
+`test_transaction.csv` is unlabeled and is used only for schema checks,
+samples, or inference. All quality metrics come from chronological partitions
+of the labeled training file.
+
+Run a bounded workstation evaluation:
+
+```powershell
+python -m scripts.transaction_data_contract
+python -m scripts.transaction_benchmark --sample-rows 75000
+```
+
+The verified bounded run completed in about three minutes on the development
+machine. Peak resident memory is not claimed because the current runner does
+not reliably capture native-library allocations; use `--full` only when memory
+and runtime resources permit.
+
+Run the complete local dataset only when machine resources allow:
+
+```powershell
+python -m scripts.transaction_benchmark --full
+```
+
+Or reproduce the bounded stages with DVC:
+
+```powershell
+dvc repro
+```
+
+Training removes exact duplicates before splitting and never divides equal
+`TransactionDT` groups across periods. Preprocessing and fitting use the
+training period; threshold selection uses validation; final metrics use the
+later untouched test period. A partition without both classes fails rather
+than falling back to a random split.
+
+Initial demonstration gates are:
+
+- average precision >= 0.70;
+- recall >= 0.70;
+- average cost <= 0.20;
+- average cost no worse than the chronological logistic baseline;
+- valid feature schema and artifact package.
+
+A failed evaluation remains useful evidence but cannot be published:
+
+```powershell
+python -m scripts.publish_model_release `
+  --artifact-root artifacts/benchmark/transaction_data/evaluated-model `
+  --release-id tx-YYYYMMDD-001 `
+  --local-only
+```
+
+Remove `--local-only` only after configuring the private Supabase Storage
+bucket and server credentials.
+
+## Monitoring
+
+Evidently is a development dependency, not a production runtime dependency.
+It compares sanitized reference and current exports containing only timestamp,
+amount, score, threshold, decision, latency, model version, and release ID.
+
+```powershell
+python -m scripts.generate_monitoring_report `
+  --reference reference_predictions.csv `
+  --current current_predictions.csv `
+  --release-id tx-YYYYMMDD-001
+```
+
+The command emits JSON status plus an HTML report when both windows have enough
+rows. Empty or small windows produce explicit `no_data` or
+`insufficient_data` status. Delayed-label monitoring is intentionally absent
+because this demo has no trusted reviewer-label workflow.
+
+## Verification
+
+```powershell
+black --check app.py src tests scripts
+flake8 app.py src tests scripts --max-line-length=120 --extend-ignore=E203,W503
+python -m mypy app.py src/FraudGuard/cloud src/FraudGuard/pipeline
+python -m pytest -p no:cacheprovider
+
+cd frontend
+npm test
+npm audit --omit=dev --audit-level=moderate
+npm run build
+cd ..
+
+docker build -t fraudguard:local .
+```
+
+## Render deployment
+
+Create one Render Blueprint service from `render.yaml`. Do not recreate an
+existing live service. In the Render dashboard, set:
+
+- `TRANSACTION_ARTIFACT_RELEASE_ID`
+- `ARTIFACT_STORAGE_BUCKET`
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `ARTIFACT_STORAGE_BUCKET`
-- `TRANSACTION_ARTIFACT_RELEASE_ID`
 - `UPSTASH_REDIS_REST_URL`
 - `UPSTASH_REDIS_REST_TOKEN`
 
-GitHub Actions runs clean-checkout tests, compile checks, predeploy validation, container build, and a protected Render deploy hook.
+`autoDeploy: false` is intentional. Configure these GitHub repository or
+environment secrets:
 
-## API
+- `RENDER_DEPLOY_HOOK_URL`
+- `RENDER_PUBLIC_BASE_URL`
 
-Health endpoints:
+After a push to `main`, CI verifies backend, frontend, and the production
+container. Only a successful CI run can trigger deployment. The deployment
+workflow passes the exact tested commit SHA to Render, then verifies
+`/version`, `/ready`, anonymous scoring, and `/dashboard`.
 
-- `GET /live`
-- `GET /ready`
-- `GET /health`
+To roll back, set `TRANSACTION_ARTIFACT_RELEASE_ID` to a previously verified
+immutable release and deploy the corresponding previously tested Git commit.
+The same manifest, checksum, schema, loading, and readiness checks apply.
 
-Production prediction endpoint:
+## Interview defense
 
-- `POST /predict/transactions`
+The design favors demonstrable controls over unused enterprise scaffolding:
 
-Protected endpoints require either:
+- chronological evaluation is less flattering than random splitting but better
+  represents future transaction scoring;
+- a logistic baseline establishes whether LightGBM earns its complexity;
+- validation-only threshold selection protects the final test period;
+- cost sensitivity exposes dependence on an assumed business ratio;
+- anonymous access is acceptable only because payload, batch, and distributed
+  rate limits bound this public demo;
+- sanitized persistence supports a credible dashboard without retaining the
+  full transaction feature payload;
+- one container avoids CORS and two-service deployment state;
+- immutable releases and exact-commit delivery demonstrate rollback and
+  traceability without adding an automated model-control plane.
 
-```text
-x-api-key: <FRAUDGUARD_API_KEY>
-```
-
-or:
-
-```text
-Authorization: Bearer <FRAUDGUARD_API_KEY>
-```
-
-The legacy `/predict` endpoint has been removed from the active production API. Use `POST /predict/transactions`.
-
-## Dataset Notes
-
-The active transaction workflow expects local files such as:
-
-- `data/train_transaction.csv`
-- `data/train_identity.csv`
-- `data/test_transaction.csv`
-- `data/test_identity.csv`
-
-Raw transaction data and model binaries are intentionally not committed. The active registry does not require the retired legacy CSV.
-
-## Limits
-
-- Scores are model scores, not calibrated financial risk.
-- The current evidence uses internal labeled splits, not public test labels.
-- Free-tier Render can sleep and cold-start.
-- API-key auth is sufficient for a protected demo, not multi-user enterprise identity.
-- A real enterprise rollout still needs key rotation, operator workflows, alerting, backup policy, access reviews, and paid uptime choices.
+Only claim metrics from an executed chronological report. Do not reuse older
+random-split headline scores as production evidence.

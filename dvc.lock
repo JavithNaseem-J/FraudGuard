@@ -1,0 +1,67 @@
+schema: '2.0'
+stages:
+  transaction_contract:
+    cmd: python -m scripts.transaction_data_contract
+    deps:
+    - path: data/train_transaction.csv
+      hash: md5
+      md5: 58b4038d8715f5e11007b826bef00ce7
+      size: 683351067
+    - path: scripts/transaction_data_contract.py
+      hash: md5
+      md5: 687eaf52040f5d79efe8293b75698244
+      size: 774
+    - path: src/FraudGuard/data/transaction_benchmark.py
+      hash: md5
+      md5: abb7a50d321f13ae228cb4a3439f9784
+      size: 26721
+    outs:
+    - path: artifacts/benchmark/transaction_data/contract_report.json
+      hash: md5
+      md5: 0174a12d86f25b7b92a3c94c8d07dec0
+      size: 280
+  transaction_benchmark:
+    cmd: python -m scripts.transaction_benchmark --sample-rows 75000
+    deps:
+    - path: data/train_transaction.csv
+      hash: md5
+      md5: 58b4038d8715f5e11007b826bef00ce7
+      size: 683351067
+    - path: scripts/transaction_benchmark.py
+      hash: md5
+      md5: 59e9f5e5674dd7d9edb737decd70cfed
+      size: 1359
+    - path: src/FraudGuard/data/transaction_benchmark.py
+      hash: md5
+      md5: abb7a50d321f13ae228cb4a3439f9784
+      size: 26721
+    - path: src/FraudGuard/utils/costs.py
+      hash: md5
+      md5: ecaa231950fee308e8354c1221301e85
+      size: 2454
+    outs:
+    - path: artifacts/benchmark/transaction_data/evaluated-model
+      hash: md5
+      md5: e8d0c3f3311c46cef13d2bedd6675451.dir
+      size: 1926026
+      nfiles: 4
+    - path: artifacts/benchmark/transaction_data/smoke_benchmark_report.json
+      hash: md5
+      md5: 1a673651bece06b2e45e57c5030043fc
+      size: 5671
+    - path: artifacts/benchmark/transaction_data/strong_benchmark_report.json
+      hash: md5
+      md5: a070935b4263002c6696389feaf2b132
+      size: 18980
+    - path: artifacts/benchmark/transaction_data/test.csv
+      hash: md5
+      md5: 355d4c5ff1b613febe1d61c12e80a489
+      size: 13635233
+    - path: artifacts/benchmark/transaction_data/train.csv
+      hash: md5
+      md5: 1f324ce2476262776ba10c0d1a022214
+      size: 60250789
+    - path: artifacts/benchmark/transaction_data/validation.csv
+      hash: md5
+      md5: aaa71a0ad05cd15c44e47edfa001c5c5
+      size: 13426922
