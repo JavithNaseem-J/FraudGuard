@@ -94,17 +94,6 @@ jobs:
     env:
       EXACT_SHA: ${{ needs.resolve-commit.outputs.exact_sha }}
     steps:
-      - name: Initialize deployment verification report
-        run: |
-          mkdir -p deployment-verification
-          cat > deployment-verification/summary.json <<JSON
-          {
-            "commit_sha": "$EXACT_SHA",
-            "status": "started",
-            "verified": false
-          }
-          JSON
-
       - name: Checkout exact deployed commit
         uses: actions/checkout@v4
         with:
@@ -124,11 +113,23 @@ jobs:
             exit 1
           fi
 
+      - name: Initialize deployment verification report
+        run: |
+          mkdir -p deployment-verification
+          cat > deployment-verification/summary.json <<JSON
+          {
+            "commit_sha": "$EXACT_SHA",
+            "status": "started",
+            "verified": false
+          }
+          JSON
+
       - name: Trigger Render deploy hook for exact SHA
         env:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
           set -euo pipefail
+          mkdir -p deployment-verification
           if [ -z "${RENDER_DEPLOY_HOOK_URL:-}" ]; then
             echo "RENDER_DEPLOY_HOOK_URL secret is required." >&2
             exit 1
@@ -174,6 +175,7 @@ jobs:
       - name: Record unsuccessful deployment verification
         if: failure()
         run: |
+          mkdir -p deployment-verification
           cat > deployment-verification/summary.json <<JSON
           {
             "commit_sha": "$EXACT_SHA",
