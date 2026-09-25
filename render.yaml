@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: fraudguard-api
+    name: fraudguard
     runtime: docker
     plan: free
     autoDeploy: false
