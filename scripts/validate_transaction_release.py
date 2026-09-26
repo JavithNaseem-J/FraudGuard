@@ -33,8 +33,20 @@ def main() -> int:
         raise SystemExit("Release validation requires at least 1,000 real rows")
     if args.batch_size <= 0:
         raise SystemExit("--batch-size must be positive")
-    if not args.public_test.exists():
+    public_test = args.public_test
+    if not public_test.exists():
+        for candidate in [
+            Path("/content/data/test_transaction.csv"),
+            Path("/content/test_transaction.csv"),
+            Path.cwd() / "data" / "test_transaction.csv",
+            Path(__file__).resolve().parents[1] / "data" / "test_transaction.csv",
+        ]:
+            if candidate.exists():
+                public_test = candidate
+                break
+    if not public_test.exists():
         raise SystemExit(f"Public transaction test file not found: {args.public_test}")
+    args.public_test = public_test
 
     pipeline = TransactionPipeline(args.artifact_root)
     identity_features = [

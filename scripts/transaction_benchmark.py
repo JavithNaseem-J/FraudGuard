@@ -9,9 +9,40 @@ from FraudGuard.data.transaction_benchmark import (
 )
 
 
+from pathlib import Path
+
+
+def _resolve_data_path(explicit_path: Path | None, filename: str) -> Path:
+    if explicit_path is not None:
+        return explicit_path
+    candidates = [
+        Path("data") / filename,
+        Path("/content/data") / filename,
+        Path("/content") / filename,
+        Path.cwd() / "data" / filename,
+        Path(__file__).resolve().parents[1] / "data" / filename,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return Path("data") / filename
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run chronological transaction-model evaluation."
+    )
+    parser.add_argument(
+        "--train",
+        type=Path,
+        default=None,
+        help="Optional path to train_transaction.csv.",
+    )
+    parser.add_argument(
+        "--test",
+        type=Path,
+        default=None,
+        help="Optional path to test_transaction.csv.",
     )
     parser.add_argument(
         "--sample-rows",
@@ -33,10 +64,15 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     sample_rows = None if args.release else args.sample_rows
+    train_path = _resolve_data_path(args.train, "train_transaction.csv")
+    test_path = _resolve_data_path(args.test, "test_transaction.csv")
+
     report = run_transaction_strong_benchmark(
         default_transaction_data_config(
             sample_rows=sample_rows,
             release_mode=args.release,
+            train_path=train_path,
+            test_path=test_path if test_path.exists() else None,
         )
     )
     promotion = report["strong_benchmark"]["promotion_gates"]

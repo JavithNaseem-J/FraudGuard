@@ -179,11 +179,14 @@ def default_transaction_data_config(
     sample_rows: int | None = None,
     *,
     release_mode: bool = False,
+    train_path: Path | None = None,
+    test_path: Path | None = None,
 ) -> TransactionBenchmarkConfig:
     root = project_root or Path(__file__).resolve().parents[3]
-    public_test = root / "data" / "test_transaction.csv"
+    train = train_path or (root / "data" / "train_transaction.csv")
+    public_test = test_path or (root / "data" / "test_transaction.csv")
     return TransactionBenchmarkConfig(
-        train_transaction_path=root / "data" / "train_transaction.csv",
+        train_transaction_path=train,
         public_test_transaction_path=public_test if public_test.exists() else None,
         output_dir=root / "artifacts" / "benchmark" / "transaction_data",
         sample_rows=sample_rows,
