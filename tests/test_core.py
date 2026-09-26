@@ -27,6 +27,7 @@ from FraudGuard.cloud.settings import AppSettings, load_settings
 from FraudGuard.cloud.supabase import supabase_api_headers
 from FraudGuard.data.transaction_benchmark import (
     COST_SENSITIVITY_RATIOS,
+    LIGHTGBM_SEARCH_SPACE,
     TransactionBenchmarkConfig,
     prepare_transaction_benchmark,
     run_transaction_smoke_benchmark,
@@ -560,7 +561,7 @@ def test_strong_benchmark_records_promotion_gates(tmp_path):
     }
     assert evidence["promotion_gates"]["gates"]["full_data_mode"]["passed"] is False
     assert evidence["tuning"]["selected_candidate_id"].startswith("lgbm-")
-    assert len(evidence["tuning"]["attempts"]) == 4
+    assert len(evidence["tuning"]["attempts"]) == len(LIGHTGBM_SEARCH_SPACE)
     assert evidence["tuning"]["final_holdout_used_for_selection"] is False
     metadata = json.loads(
         Path(evidence["artifacts"]["metadata"]).read_text(encoding="utf-8")
