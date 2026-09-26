@@ -69,7 +69,8 @@ jobs:
 
       - name: Run backend static type analysis
         run: |
-          python -m mypy app.py src/FraudGuard/cloud src/FraudGuard/pipeline \
+          python -m mypy app.py src/FraudGuard/cloud src/FraudGuard/data \
+            src/FraudGuard/pipeline scripts \
             --ignore-missing-imports --no-strict-optional \
             --allow-untyped-defs --check-untyped-defs
 

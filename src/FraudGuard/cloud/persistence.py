@@ -10,6 +10,7 @@ from typing import Any
 
 from FraudGuard import logger
 from FraudGuard.cloud.settings import AppSettings
+from FraudGuard.cloud.supabase import supabase_api_headers
 
 
 def utc_now_iso() -> str:
@@ -154,8 +155,7 @@ class SupabasePersistence:
             method=method,
             headers={
                 "Content-Type": "application/json",
-                "apikey": self.settings.supabase_service_role_key,
-                "Authorization": f"Bearer {self.settings.supabase_service_role_key}",
+                **supabase_api_headers(self.settings.supabase_service_role_key),
                 "Prefer": prefer,
             },
         )

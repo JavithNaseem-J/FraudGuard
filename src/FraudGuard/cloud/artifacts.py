@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from FraudGuard.cloud.settings import AppSettings
+from FraudGuard.cloud.supabase import supabase_api_headers
 from FraudGuard.pipeline.transaction_pipeline import TransactionPipeline
 
 MANIFEST_FILENAME = "manifest.json"
@@ -187,10 +188,7 @@ def _storage_url(settings: AppSettings, release_id: str, file_name: str) -> str:
 def _storage_headers(
     settings: AppSettings, *, content_type: str | None = None
 ) -> dict[str, str]:
-    headers = {
-        "apikey": settings.supabase_service_role_key,
-        "Authorization": f"Bearer {settings.supabase_service_role_key}",
-    }
+    headers = supabase_api_headers(settings.supabase_service_role_key)
     if content_type:
         headers["Content-Type"] = content_type
     return headers
@@ -208,7 +206,9 @@ def publish_transaction_release(
         )
     manifest = build_transaction_release_manifest(artifact_root, release_id=release_id)
     manifest_path = write_manifest(artifact_root, manifest)
-    upload_names = [MANIFEST_FILENAME, *REQUIRED_TRANSACTION_FILES]
+    # Upload the manifest last so readers never observe an incomplete release
+    # as ready for download.
+    upload_names = [*REQUIRED_TRANSACTION_FILES, MANIFEST_FILENAME]
     for name in upload_names:
         path = manifest_path if name == MANIFEST_FILENAME else artifact_root / name
         request = urllib.request.Request(

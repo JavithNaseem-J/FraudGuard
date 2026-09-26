@@ -88,6 +88,12 @@ class TransactionPipeline:
             raise ValueError("Transaction feature audit does not match metadata")
         if self.metadata.get("public_test_used_for_metrics") is not False:
             raise ValueError("Public unlabeled test data cannot be used for metrics")
+        promotion = self.metadata.get("promotion_gates")
+        if (
+            not isinstance(promotion, dict)
+            or promotion.get("all_gates_passed") is not True
+        ):
+            raise ValueError("Transaction model is not approved for serving")
 
     def validate_rows(
         self, rows: list[dict[str, Any]]

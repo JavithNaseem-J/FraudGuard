@@ -156,6 +156,8 @@ jobs:
         env:
           PUBLIC_BASE_URL: ${{ secrets.RENDER_PUBLIC_BASE_URL }}
           EXPECTED_COMMIT_SHA: ${{ env.EXACT_SHA }}
+          EXPECTED_MODEL_RELEASE_ID: ${{ vars.EXPECTED_MODEL_RELEASE_ID }}
+          EXPECTED_MODEL_FEATURE_COUNT: ${{ vars.EXPECTED_MODEL_FEATURE_COUNT }}
         run: |
           set -euo pipefail
           if [ -z "${PUBLIC_BASE_URL:-}" ]; then

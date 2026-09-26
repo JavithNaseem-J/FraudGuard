@@ -29,12 +29,12 @@ stages:
       size: 683351067
     - path: scripts/transaction_benchmark.py
       hash: md5
-      md5: 59e9f5e5674dd7d9edb737decd70cfed
-      size: 1359
+      md5: a19b6abafe6793182ab2283e1967033f
+      size: 1583
     - path: src/FraudGuard/data/transaction_benchmark.py
       hash: md5
-      md5: abb7a50d321f13ae228cb4a3439f9784
-      size: 26721
+      md5: f262216f9e4e3999143c534828ae25ff
+      size: 40994
     - path: src/FraudGuard/utils/costs.py
       hash: md5
       md5: ecaa231950fee308e8354c1221301e85
@@ -42,26 +42,18 @@ stages:
     outs:
     - path: artifacts/benchmark/transaction_data/evaluated-model
       hash: md5
-      md5: e8d0c3f3311c46cef13d2bedd6675451.dir
-      size: 1926026
+      md5: d2e3bde892f1934c275540f7033cc3fd.dir
+      size: 1877864
       nfiles: 4
+    - path: artifacts/benchmark/transaction_data/preparation_report.json
+      hash: md5
+      md5: b0d55e88382ad5d02e7e7d14cce57e7a
+      size: 7636
     - path: artifacts/benchmark/transaction_data/smoke_benchmark_report.json
       hash: md5
-      md5: 1a673651bece06b2e45e57c5030043fc
-      size: 5671
+      md5: 522185ad8ab3721eba87d6cc42978773
+      size: 11759
     - path: artifacts/benchmark/transaction_data/strong_benchmark_report.json
       hash: md5
-      md5: a070935b4263002c6696389feaf2b132
-      size: 18980
-    - path: artifacts/benchmark/transaction_data/test.csv
-      hash: md5
-      md5: 355d4c5ff1b613febe1d61c12e80a489
-      size: 13635233
-    - path: artifacts/benchmark/transaction_data/train.csv
-      hash: md5
-      md5: 1f324ce2476262776ba10c0d1a022214
-      size: 60250789
-    - path: artifacts/benchmark/transaction_data/validation.csv
-      hash: md5
-      md5: aaa71a0ad05cd15c44e47edfa001c5c5
-      size: 13426922
+      md5: f20107623c3cb48871689dafde755c10
+      size: 35857

@@ -11,7 +11,7 @@ Fraud labels are imbalanced, and missing a fraudulent transaction has a differen
 ## Features
 
 - Chronological train, validation, and test splits that keep equal transaction-time groups together.
-- Validation-based threshold selection and held-out fraud metrics with configurable error costs.
+- Bounded validation-only LightGBM tuning and cost-aware threshold selection.
 - FastAPI scoring for schema-validated transaction rows, with CSV/JSON input in the React interface.
 - Dashboard backed by optional sanitized Supabase prediction records.
 - DVC benchmark stages and immutable model release support.
@@ -24,8 +24,9 @@ flowchart LR
   subgraph Build[Training and release]
     D[data/train_transaction.csv] --> DVC[DVC benchmark stages]
     DVC --> Split[Chronological train / validation / test]
-    Split --> Train[LightGBM pipeline + threshold]
-    Train --> Gates{Promotion gates}
+    Split --> Tune[Bounded LightGBM validation search]
+    Tune --> Train[Freeze model + threshold]
+    Train --> Gates{Final holdout promotion gates}
     Gates -->|pass| Publish[Release publisher]
     Publish --> Storage[(Private Supabase Storage)]
   end
@@ -62,11 +63,11 @@ sequenceDiagram
   Data->>Bench: Provide labeled transaction rows
   Bench->>Bench: Validate, deduplicate, and sort by transaction time
   Note over Bench: Make chronological 70/15/15 splits and keep equal-time groups together
-  Bench->>Model: Fit preprocessing and model on training period
-  Model-->>Bench: Return fitted pipeline
-  Bench->>Eval: Score validation period
-  Eval-->>Bench: Select threshold using validation scores
-  Bench->>Eval: Score later test period at selected threshold
+  Bench->>Model: Fit bounded candidates on training period
+  Model-->>Bench: Return validation scores
+  Bench->>Eval: Select candidate and threshold on validation period
+  Eval-->>Bench: Freeze the selected pipeline and threshold
+  Bench->>Eval: Score the untouched later holdout once
   Eval-->>Bench: Return held-out metrics
   Bench->>Gate: Check quality, baseline, schema, and artifact gates
   alt All promotion gates pass
@@ -122,15 +123,40 @@ FraudGuard/
 
 ## Key metrics
 
-On the saved 75,000-row run, the LightGBM candidate was evaluated on the later 11,250-row chronological test split. The most decision-relevant results were:
+On the saved historical 75,000-row diagnostic, the LightGBM candidate (`lgbm-02`, threshold 0.2954) was evaluated on the later 11,250-row chronological holdout. The selected candidate beat the logistic baseline on every metric. The most decision-relevant results at the 1:20 cost operating point were:
 
-| Test metric | Value |
-|---|---:|
-| Average precision | 0.53 |
-| Recall | 0.64 |
-| Cost-weighted average loss | 0.24 |
+| Partition | Metric | Value |
+|---|---|---:|
+| Validation | Average precision | 0.584 |
+| Validation | Recall | 0.731 |
+| Validation | Cost-weighted average loss | 0.191 |
+| **Holdout** | **Average precision** | **0.572** |
+| **Holdout** | **Recall** | **0.664** |
+| **Holdout** | **Cost-weighted average loss** | **0.247** |
 
-Metric values are truncated to two decimal places; promotion uses full precision. The saved report marks promotion **blocked**: all three metrics miss their configured gates (average precision `>= 0.70`, recall `>= 0.70`, average loss `<= 0.20`). Cost uses false-positive cost `1.0` and false-negative cost `20.0`. These are local benchmark results, not live payment performance.
+Logistic baseline on holdout (comparison): average cost 0.344 — LightGBM improves by −0.097.
+
+Cost sensitivity on holdout (1:FN weight):
+
+| FN cost weight | Threshold | Recall | FP | FN | Total cost |
+|---:|---:|---:|---:|---:|---:|
+| 10 | 0.407 | 0.598 | 318 | 129 | 1,298 |
+| **20** | **0.295** | **0.664** | **614** | **108** | **2,774** |
+| 50 | 0.117 | 0.760 | 1,829 | 77 | 4,129 |
+| 100 | 0.090 | 0.872 | 2,288 | 41 | 6,388 |
+
+Metric values are rounded to three decimal places. The historical report marks promotion **blocked**: holdout average precision (0.572), recall (0.664), and average cost (0.247) each miss their configured gates (average precision `>= 0.70`, recall `>= 0.70`, average loss `<= 0.20`). The `full_data_mode` gate also fails because this is a 75 k-row diagnostic, not a full 590,540-row release run. Cost uses false-positive cost `1.0` and false-negative cost `20.0`. This diagnostic is not a publishable release run and is not live payment performance. Full-data metrics will replace it only after the 590,540-row release workflow completes and every gate passes.
+
+## Dataset and evaluation contract
+
+| File | Rows | Role |
+|---|---:|---|
+| `data/train_transaction.csv` | 590,540 labeled rows | Chronological model development and final evaluation |
+| `data/test_transaction.csv` | 506,691 unlabeled rows | Schema validation and inference smoke testing only |
+
+The labeled file is deduplicated, ordered by `TransactionDT` and `TransactionID`, and divided near 70/15/15 at `TransactionDT` group boundaries. Training fits preprocessing and models, validation selects the LightGBM configuration and 1:20 cost-weighted threshold, and the final chronological holdout is evaluated once after selection is frozen. The public test file and identity datasets are excluded from fitting, tuning, threshold selection, and metrics.
+
+The release feature contract contains the 392 transaction columns left after excluding `TransactionID` and `isFraud`. A release is blocked if it depends on `id_*`, `DeviceType`, or `DeviceInfo` fields.
 
 ## Setup, run, and use
 
@@ -152,13 +178,42 @@ Set-Location ..
 python app.py
 ```
 
+## Full-data training and release
+
+The publishable workflow is intentionally distinct from the bounded developer diagnostic:
+
+```powershell
+# Fast local/CI diagnostic. This can never pass the full-data publication gate.
+python -m scripts.transaction_benchmark --sample-rows 75000
+
+# Full release workflow. Requires all 590,540 labeled rows and more memory than
+# a constrained local workstation may provide.
+python -m scripts.transaction_benchmark --release
+
+# After every promotion gate passes, validate 1,000 real unlabeled test rows.
+python -m scripts.validate_transaction_release `
+  --artifact-root artifacts/benchmark/transaction_data/evaluated-model `
+  --public-test data/test_transaction.csv `
+  --rows 1000
+
+# Build and validate the immutable manifest without uploading.
+python -m scripts.publish_model_release `
+  --artifact-root artifacts/benchmark/transaction_data/evaluated-model `
+  --release-id tx-YYYYMMDD-transaction-only-001 `
+  --local-only
+```
+
+For Kaggle or Colab, clone the same commit, install `requirements.lock` plus the editable package, attach the two transaction CSV files privately under `data/`, and run the same `--release` command. Do not upload datasets, `.env`, notebook secrets, or generated artifacts to Git. Supply Supabase credentials through the notebook secret store only when publishing an approved release.
+
+Remote publication refuses failed promotion metadata and existing release IDs. It uploads the four payload files before `manifest.json`, which acts as the completion marker. Production promotion is a separate configuration change: retain the current release as `ROLLBACK_RELEASE_ID`, set `TRANSACTION_ARTIFACT_RELEASE_ID` to the new immutable release, set the GitHub production-environment variables `EXPECTED_MODEL_RELEASE_ID` and `EXPECTED_MODEL_FEATURE_COUNT=392`, deploy through GitHub Actions, and verify the expected release and transaction-only schema.
+
 
 
 
 ## Future work
 
-- Revise the model or features and rerun the chronological benchmark until the configured promotion gates pass.
-- Evaluate the optional identity side-table features; the current benchmark does not use them.
+- Execute the full-data release workflow in a suitable higher-memory free environment.
+- Publish and promote only if the frozen final-holdout result passes every configured gate.
 
 ## License
 

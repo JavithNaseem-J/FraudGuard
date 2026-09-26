@@ -55,6 +55,13 @@ def _request(
 def main() -> int:
     base_url = os.environ["PUBLIC_BASE_URL"].rstrip("/")
     expected_commit_sha = os.environ.get("EXPECTED_COMMIT_SHA", "").strip()
+    expected_release_id = os.environ.get("EXPECTED_MODEL_RELEASE_ID", "").strip()
+    expected_feature_count_value = os.environ.get(
+        "EXPECTED_MODEL_FEATURE_COUNT", ""
+    ).strip()
+    expected_feature_count = (
+        int(expected_feature_count_value) if expected_feature_count_value else None
+    )
     last_error = "not started"
 
     if expected_commit_sha:
@@ -104,9 +111,34 @@ def main() -> int:
         print(f"Render readiness smoke failed: {last_error}")
         return 1
 
+    if expected_release_id and body.get("release_id") != expected_release_id:
+        print(
+            "Render release verification failed: "
+            f"expected {expected_release_id}, got {body.get('release_id')}"
+        )
+        return 1
+
     status, schema = _request(f"{base_url}/schema/transactions")
     if status != 200 or not schema.get("feature_names"):
         print(f"Render schema smoke failed: HTTP {status}: {schema}")
+        return 1
+    identity_features = [
+        feature
+        for feature in schema["feature_names"]
+        if feature.startswith("id_") or feature in {"DeviceType", "DeviceInfo"}
+    ]
+    if expected_feature_count is not None and (
+        schema.get("feature_count") != expected_feature_count
+    ):
+        print(
+            "Render feature-count verification failed: "
+            f"expected {expected_feature_count}, got {schema.get('feature_count')}"
+        )
+        return 1
+    if expected_feature_count == 392 and identity_features:
+        print(
+            f"Render transaction-only schema contains identity fields: {identity_features}"
+        )
         return 1
 
     row = {feature: _sample_value(feature) for feature in schema["feature_names"]}

@@ -16,9 +16,7 @@ stages:
       - scripts/transaction_benchmark.py
       - data/train_transaction.csv
     outs:
-      - artifacts/benchmark/transaction_data/train.csv
-      - artifacts/benchmark/transaction_data/validation.csv
-      - artifacts/benchmark/transaction_data/test.csv
+      - artifacts/benchmark/transaction_data/preparation_report.json
       - artifacts/benchmark/transaction_data/smoke_benchmark_report.json
       - artifacts/benchmark/transaction_data/strong_benchmark_report.json
       - artifacts/benchmark/transaction_data/evaluated-model

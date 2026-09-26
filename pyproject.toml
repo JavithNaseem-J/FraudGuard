@@ -37,8 +37,11 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-q"
+addopts = "-q --basetemp=pytest-run-temp"
 pythonpath = ["src", "."]
+asyncio_mode = "strict"
+tmp_path_retention_policy = "failed"
+tmp_path_retention_count = 3
 markers = [
   "integration: exercises the FastAPI application across component boundaries",
 ]

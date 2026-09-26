@@ -17,12 +17,14 @@ from sklearn.pipeline import Pipeline
 from app import _dashboard_snapshot, app
 from FraudGuard.cloud.artifacts import (
     build_transaction_release_manifest,
+    publish_transaction_release,
     validate_release_directory,
     write_manifest,
 )
 from FraudGuard.cloud.persistence import PredictionRecord, SupabasePersistence
 from FraudGuard.cloud.rate_limit import CloudRateLimiter
 from FraudGuard.cloud.settings import AppSettings, load_settings
+from FraudGuard.cloud.supabase import supabase_api_headers
 from FraudGuard.data.transaction_benchmark import (
     COST_SENSITIVITY_RATIOS,
     TransactionBenchmarkConfig,
@@ -68,7 +70,7 @@ def local_settings(tmp_path: Path, **changes) -> AppSettings:
     return replace(settings, **changes)
 
 
-def write_model_artifacts(root: Path) -> pd.DataFrame:
+def write_model_artifacts(root: Path, *, approved: bool = True) -> pd.DataFrame:
     root.mkdir(parents=True, exist_ok=True)
     frame = pd.DataFrame(
         {
@@ -116,7 +118,7 @@ def write_model_artifacts(root: Path) -> pd.DataFrame:
         "public_test_used_for_metrics": False,
         "score_is_calibrated": False,
         "threshold": threshold,
-        "promotion_gates": {"all_gates_passed": True},
+        "promotion_gates": {"all_gates_passed": approved},
     }
     audit = {
         "selected_feature_count": len(FEATURES),
@@ -130,7 +132,11 @@ def write_model_artifacts(root: Path) -> pd.DataFrame:
 
 
 def make_transaction_config(
-    tmp_path: Path, rows: int = 120
+    tmp_path: Path,
+    rows: int = 120,
+    *,
+    release_mode: bool = False,
+    with_public_test: bool = False,
 ) -> TransactionBenchmarkConfig:
     data_dir = tmp_path / "data"
     data_dir.mkdir()
@@ -146,10 +152,18 @@ def make_transaction_config(
                 "isFraud": 1 if index % 5 == 0 else 0,
             }
         )
-    pd.DataFrame(records).to_csv(data_dir / "train_transaction.csv", index=False)
+    frame = pd.DataFrame(records)
+    frame.to_csv(data_dir / "train_transaction.csv", index=False)
+    public_test_path = data_dir / "test_transaction.csv"
+    if with_public_test:
+        frame.drop(columns="isFraud").to_csv(public_test_path, index=False)
     return TransactionBenchmarkConfig(
         train_transaction_path=data_dir / "train_transaction.csv",
+        public_test_transaction_path=(public_test_path if with_public_test else None),
         output_dir=tmp_path / "artifacts" / "benchmark" / "transaction_data",
+        release_mode=release_mode,
+        expected_full_source_rows=rows,
+        expected_feature_count=4,
     )
 
 
@@ -236,6 +250,62 @@ def test_release_manifest_checks_integrity(tmp_path):
     path.write_text("{}", encoding="utf-8")
     with pytest.raises(ValueError, match="size mismatch|checksum mismatch"):
         validate_release_directory(root, validate_model=False)
+
+
+def test_release_publication_uploads_manifest_last(monkeypatch, tmp_path):
+    root = tmp_path / "model"
+    write_model_artifacts(root)
+    uploaded: list[str] = []
+
+    class FakeResponse:
+        status = 201
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def fake_urlopen(request, timeout):
+        assert timeout == 5
+        uploaded.append(request.full_url.rsplit("/", maxsplit=1)[-1])
+        return FakeResponse()
+
+    monkeypatch.setattr(
+        "FraudGuard.cloud.artifacts.urllib.request.urlopen", fake_urlopen
+    )
+    settings = local_settings(
+        tmp_path,
+        supabase_url="https://example.supabase.co",
+        supabase_service_role_key="sb_secret_example",
+        artifact_storage_bucket="model-releases",
+    )
+    publish_transaction_release(settings, root, release_id="tx-test-release")
+    assert uploaded[-1] == "manifest.json"
+    assert set(uploaded[:-1]) == {
+        "model.joblib",
+        "threshold.json",
+        "metadata.json",
+        "feature_audit.json",
+    }
+
+
+def test_transaction_pipeline_rejects_unapproved_artifact(tmp_path):
+    root = tmp_path / "model"
+    write_model_artifacts(root, approved=False)
+    with pytest.raises(ValueError, match="not approved"):
+        TransactionPipeline(root)
+
+
+def test_supabase_headers_support_modern_and_legacy_server_keys():
+    modern = supabase_api_headers("sb_secret_example")
+    assert modern == {"apikey": "sb_secret_example"}
+
+    legacy = supabase_api_headers("eyJlegacy.jwt.value")
+    assert legacy == {
+        "apikey": "eyJlegacy.jwt.value",
+        "Authorization": "Bearer eyJlegacy.jwt.value",
+    }
 
 
 def test_settings_have_bounded_demo_defaults(monkeypatch):
@@ -438,6 +508,40 @@ def test_transaction_contract_and_smoke_evaluation_are_temporal(tmp_path):
     )
 
 
+def test_release_mode_requires_complete_source_and_public_schema(tmp_path):
+    config = make_transaction_config(
+        tmp_path,
+        release_mode=True,
+        with_public_test=True,
+    )
+    contract = validate_transaction_data_contract(config)
+    prepared = prepare_transaction_benchmark(config)
+    assert contract["ready"] is True
+    assert contract["source_rows"] == 120
+    assert len(contract["source_sha256"]) == 64
+    assert contract["feature_count"] == 4
+    assert contract["public_test_schema_compatible"] is True
+    assert prepared["mode"] == "release"
+    assert prepared["release_eligible_execution"] is True
+    assert not any(config.output_dir.glob("train.csv"))
+
+    truncated = replace(config, expected_full_source_rows=121)
+    invalid = validate_transaction_data_contract(truncated)
+    assert invalid["ready"] is False
+    with pytest.raises(ValueError, match="contract failed"):
+        prepare_transaction_benchmark(truncated)
+
+
+def test_identity_feature_is_rejected_by_transaction_contract(tmp_path):
+    config = make_transaction_config(tmp_path, with_public_test=True)
+    frame = pd.read_csv(config.train_transaction_path)
+    frame["id_01"] = 0
+    frame.to_csv(config.train_transaction_path, index=False)
+    contract = validate_transaction_data_contract(config)
+    assert contract["ready"] is False
+    assert contract["identity_features"] == ["id_01"]
+
+
 def test_strong_benchmark_records_promotion_gates(tmp_path):
     pytest.importorskip("lightgbm")
     config = make_transaction_config(tmp_path)
@@ -451,7 +555,13 @@ def test_strong_benchmark_records_promotion_gates(tmp_path):
         "logistic_baseline_cost",
         "feature_schema",
         "artifact_package",
+        "full_data_mode",
+        "final_holdout_isolation",
     }
+    assert evidence["promotion_gates"]["gates"]["full_data_mode"]["passed"] is False
+    assert evidence["tuning"]["selected_candidate_id"].startswith("lgbm-")
+    assert len(evidence["tuning"]["attempts"]) == 4
+    assert evidence["tuning"]["final_holdout_used_for_selection"] is False
     metadata = json.loads(
         Path(evidence["artifacts"]["metadata"]).read_text(encoding="utf-8")
     )
