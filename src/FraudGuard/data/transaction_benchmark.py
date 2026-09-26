@@ -501,9 +501,10 @@ def _baseline_pipeline(feature_names: list[str], random_state: int) -> Pipeline:
                 SGDClassifier(
                     loss="log_loss",
                     class_weight="balanced",
-                    max_iter=2000,
-                    tol=1e-4,
-                    average=True,
+                    max_iter=100,
+                    tol=1e-3,
+                    early_stopping=True,
+                    n_iter_no_change=5,
                     random_state=random_state,
                 ),
             ),
