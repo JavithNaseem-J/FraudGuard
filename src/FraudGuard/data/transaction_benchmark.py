@@ -864,6 +864,12 @@ def _tune_lightgbm_candidate(
 
     for index, parameters in enumerate(LIGHTGBM_SEARCH_SPACE, start=1):
         candidate_id = f"lgbm-{index:02d}"
+        print(
+            f"[tuning] Fitting {candidate_id} ({index}/{len(LIGHTGBM_SEARCH_SPACE)}) "
+            f"[trees={parameters['n_estimators']}, leaves={parameters['num_leaves']}, "
+            f"lr={parameters['learning_rate']}]...",
+            flush=True,
+        )
         model = _lightgbm_pipeline(
             classifier_type=classifier_type,
             numeric=numeric,
@@ -898,6 +904,14 @@ def _tune_lightgbm_candidate(
             ),
         }
         attempts.append(attempt)
+        print(
+            f"[tuning] {candidate_id} val results: "
+            f"AP={validation_metrics['average_precision']:.4f}, "
+            f"recall={validation_metrics['recall']:.4f}, "
+            f"avg_cost={validation_metrics['cost_weighted']['average_cost']:.4f} "
+            f"(threshold={float(threshold_info['optimal_threshold']):.4f})",
+            flush=True,
+        )
         if selected_attempt is None or _candidate_selection_key(
             attempt, config.promotion_min_recall
         ) < _candidate_selection_key(selected_attempt, config.promotion_min_recall):
@@ -963,10 +977,19 @@ def run_transaction_strong_benchmark(
     except ImportError as error:
         raise RuntimeError("LightGBM is required for the strong benchmark") from error
 
+    print("[benchmark] Step 1/4: Preparing and splitting transaction data...", flush=True)
     preparation_report, partitions = _prepare_transaction_frames(config)
+    print(
+        f"[benchmark] Partitions ready: train={len(partitions['train']):,}, "
+        f"val={len(partitions['validation']):,}, test={len(partitions['test']):,}",
+        flush=True,
+    )
+    print("[benchmark] Step 2/4: Fitting chronological SGD logistic baseline...", flush=True)
     baseline_report = _run_transaction_smoke_from_partitions(
         config, preparation_report, partitions
     )
+    base_cost = baseline_report["smoke_benchmark"]["metrics"]["cost_weighted"]["average_cost"]
+    print(f"[benchmark] Baseline complete: avg_cost={base_cost:.4f}", flush=True)
     train = partitions["train"]
     validation = partitions["validation"]
     test = partitions["test"]
@@ -979,6 +1002,10 @@ def run_transaction_strong_benchmark(
     if not features:
         raise ValueError("No usable transaction features are available")
 
+    print(
+        f"[benchmark] Step 3/4: Starting bounded LightGBM search across {len(LIGHTGBM_SEARCH_SPACE)} candidates...",
+        flush=True,
+    )
     model, validation_metrics, threshold_info, tuning = _tune_lightgbm_candidate(
         classifier_type=LGBMClassifier,
         train=train,
@@ -988,6 +1015,8 @@ def run_transaction_strong_benchmark(
         categorical=categorical,
         config=config,
     )
+    print(f"[benchmark] Winner selected: {tuning['selected_candidate_id']}", flush=True)
+    print("[benchmark] Step 4/4: Evaluating frozen candidate on untouched holdout...", flush=True)
     threshold = float(threshold_info["optimal_threshold"])
     test_labels = test[config.target_column].astype(int).to_numpy()
     test_scores = model.predict_proba(test[features])[:, 1]
@@ -1065,6 +1094,19 @@ def run_transaction_strong_benchmark(
         holdout_isolated=time_isolated,
     )
     _update_artifact_promotion(Path(artifacts["metadata"]), promotion)
+    passed_gates = sum(1 for g in promotion["gates"].values() if g["passed"])
+    print(
+        f"[benchmark] Promotion decision: {promotion['decision'].upper()} "
+        f"({passed_gates}/8 gates passed)",
+        flush=True,
+    )
+    for gate_name, gate_info in promotion["gates"].items():
+        status = "PASS" if gate_info["passed"] else "FAIL"
+        observed = gate_info.get("observed", "valid" if gate_info["passed"] else "invalid")
+        print(
+            f"  - [{status}] {gate_name}: observed={observed}, expected={gate_info['expected']}",
+            flush=True,
+        )
     report = {
         **baseline_report,
         "strong_benchmark": {
