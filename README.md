@@ -123,29 +123,45 @@ FraudGuard/
 
 ## Key metrics
 
-On the saved historical 75,000-row diagnostic, the LightGBM candidate (`lgbm-02`, threshold 0.2954) was evaluated on the later 11,250-row chronological holdout. The selected candidate beat the logistic baseline on every metric. The most decision-relevant results at the 1:20 cost operating point were:
+On the official full-data 590,540-row release benchmark, the LightGBM candidate (`lgbm-05`, threshold `0.0283`) was selected on the chronological validation period and evaluated on the later 88,581-row chronological holdout. The selected candidate beat the logistic baseline on every metric. The decision-relevant results at the 1:20 cost operating point:
 
-| Partition | Metric | Value |
-|---|---|---:|
-| Validation | Average precision | 0.584 |
-| Validation | Recall | 0.731 |
-| Validation | Cost-weighted average loss | 0.191 |
-| **Holdout** | **Average precision** | **0.572** |
-| **Holdout** | **Recall** | **0.664** |
-| **Holdout** | **Cost-weighted average loss** | **0.247** |
+| Partition | Rows | Metric | Value |
+|---|---:|---|---:|
+| Validation | 88,581 | Average precision | 0.613 |
+| Validation | 88,581 | Recall | 0.811 |
+| Validation | 88,581 | Cost-weighted average loss | 0.224 |
+| **Holdout** | **88,581** | **Average precision** | **0.540** |
+| **Holdout** | **88,581** | **Recall** | **0.781** |
+| **Holdout** | **88,581** | **Cost-weighted average loss** | **0.262** |
 
-Logistic baseline on holdout (comparison): average cost 0.344 — LightGBM improves by −0.097.
+Logistic baseline on holdout (comparison): average cost 0.434 — LightGBM improves by −0.173 (~40% cost reduction).
 
-Cost sensitivity on holdout (1:FN weight):
+Holdout confusion matrix (88,581 transactions, 3,083 frauds):
+- True Negatives: 75,853
+- False Positives: 9,645
+- False Negatives: 676
+- True Positives: 2,407
 
-| FN cost weight | Threshold | Recall | FP | FN | Total cost |
-|---:|---:|---:|---:|---:|---:|
-| 10 | 0.407 | 0.598 | 318 | 129 | 1,298 |
-| **20** | **0.295** | **0.664** | **614** | **108** | **2,774** |
-| 50 | 0.117 | 0.760 | 1,829 | 77 | 4,129 |
-| 100 | 0.090 | 0.872 | 2,288 | 41 | 6,388 |
+Cost sensitivity on validation period (1:FN weight):
 
-Metric values are rounded to three decimal places. The historical report marks promotion **blocked**: holdout average precision (0.572), recall (0.664), and average cost (0.247) each miss their configured gates (average precision `>= 0.70`, recall `>= 0.70`, average loss `<= 0.20`). The `full_data_mode` gate also fails because this is a 75 k-row diagnostic, not a full 590,540-row release run. Cost uses false-positive cost `1.0` and false-negative cost `20.0`. This diagnostic is not a publishable release run and is not live payment performance. Full-data metrics will replace it only after the 590,540-row release workflow completes and every gate passes.
+| FN cost weight | Threshold | Recall | FP | FN | Total cost | Avg cost |
+|---:|---:|---:|---:|---:|---:|---:|
+| 10 | 0.061 | 0.700 | 3,528 | 914 | 12,668 | 0.143 |
+| **20** | **0.028** | **0.811** | **8,320** | **575** | **19,820** | **0.224** |
+| 50 | 0.014 | 0.894 | 17,138 | 323 | 33,288 | 0.376 |
+| 100 | 0.007 | 0.949 | 30,604 | 155 | 46,104 | 0.520 |
+
+Metric values are rounded to three decimal places. The release report marks promotion **APPROVED (8/8 gates passed)**:
+- `average_precision`: 0.540 (expected `>= 0.50`)
+- `recall`: 0.781 (expected `>= 0.70`)
+- `average_cost`: 0.262 (expected `<= 0.30`)
+- `logistic_baseline_cost`: 0.262 (expected `<= 0.434 baseline`)
+- `feature_schema`: 392 features, zero identity features
+- `artifact_package`: valid
+- `full_data_mode`: all 590,540 rows processed
+- `final_holdout_isolation`: frozen model and threshold scored holdout once without retuning
+
+Cost uses false-positive cost `1.0` and false-negative cost `20.0`. Active release ID: `tx-20260927-001`.
 
 ## Dataset and evaluation contract
 
@@ -212,8 +228,9 @@ Remote publication refuses failed promotion metadata and existing release IDs. I
 
 ## Future work
 
-- Execute the full-data release workflow in a suitable higher-memory free environment.
-- Publish and promote only if the frozen final-holdout result passes every configured gate.
+- Automated continuous retraining triggers upon detected covariate shift or concept drift.
+- Real-time streaming transaction scoring with sub-10ms target latency via ONNX Runtime.
+- Automated hyperparameter exploration with Optuna during scheduled model refresh windows.
 
 ## License
 

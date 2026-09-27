@@ -8,6 +8,33 @@ import joblib
 import pandas as pd
 
 
+class _RemainderColsList(list):
+    """Compatibility shim for scikit-learn <= 1.6 pickled ColumnTransformers."""
+    pass
+
+
+def _apply_sklearn_unpickle_compatibility() -> None:
+    """Ensure pipelines pickled with scikit-learn 1.6.x unpickle cleanly in 1.8+."""
+    try:
+        import sklearn.compose._column_transformer as ct
+        if not hasattr(ct, "_RemainderColsList"):
+            ct._RemainderColsList = _RemainderColsList
+    except Exception:
+        pass
+
+    try:
+        import sklearn.impute._base as ib
+        orig_setstate = getattr(ib.SimpleImputer, "__setstate__", None)
+        if orig_setstate is not None:
+            def _patched_setstate(self: Any, state: Any) -> None:
+                orig_setstate(self, state)
+                if not hasattr(self, "_fill_dtype") and hasattr(self, "_fit_dtype"):
+                    self._fill_dtype = self._fit_dtype
+            ib.SimpleImputer.__setstate__ = _patched_setstate
+    except Exception:
+        pass
+
+
 class TransactionPipeline:
     """Load, validate, and serve one immutable transaction-model release."""
 
@@ -30,6 +57,7 @@ class TransactionPipeline:
                 f"Required transaction model artifacts are missing: {missing}"
             )
 
+        _apply_sklearn_unpickle_compatibility()
         self.model = joblib.load(self.model_path)
         self.threshold_info = self._load_json(self.threshold_path)
         self.metadata = self._load_json(self.metadata_path)

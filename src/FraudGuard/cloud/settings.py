@@ -42,6 +42,14 @@ class AppSettings:
 
 def load_settings() -> AppSettings:
     project_root = Path(__file__).resolve().parents[3]
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(project_root / ".env.local")
+        load_dotenv(project_root / ".env")
+    except ImportError:
+        pass
+
     return AppSettings(
         app_env=os.getenv("APP_ENV", "local"),
         transaction_artifact_root=Path(
