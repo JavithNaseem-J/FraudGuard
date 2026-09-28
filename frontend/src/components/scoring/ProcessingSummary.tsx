@@ -14,7 +14,7 @@ export const ProcessingSummary: React.FC<ProcessingSummaryProps> = ({
   summary,
   isSingleTransaction = false,
   singleScore = 0,
-  threshold = 0.72,
+  threshold = 0.028,
 }) => {
   const isSingleFraud = singleScore >= threshold;
 

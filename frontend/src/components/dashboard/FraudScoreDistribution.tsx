@@ -19,12 +19,20 @@ interface CustomTooltipProps {
     dataKey: string;
   }>;
   label?: string;
+  threshold?: number;
+  thresholdLabel?: string;
 }
 
-const CustomTooltip: React.FC<CustomTooltipProps> = ({ active, payload, label }) => {
+const CustomTooltip: React.FC<CustomTooltipProps> = ({
+  active,
+  payload,
+  label,
+  threshold = 0.028,
+  thresholdLabel = '0.028',
+}) => {
   if (active && payload && payload.length) {
     const count = payload[0].value;
-    const isAboveThreshold = parseFloat(label || '0') >= 0.72;
+    const isAboveThreshold = parseFloat(label || '0') >= threshold;
 
     return (
       <div className="bg-white border border-slate-border p-2.5 rounded-lg shadow-card text-xs space-y-1">
@@ -37,7 +45,9 @@ const CustomTooltip: React.FC<CustomTooltipProps> = ({ active, payload, label })
         </div>
         <div className="text-[11px] pt-0.5">
           {isAboveThreshold ? (
-            <span className="text-status-danger font-medium">Above decision threshold (0.72)</span>
+            <span className="text-status-danger font-medium">
+              Above decision threshold ({thresholdLabel})
+            </span>
           ) : (
             <span className="text-status-success font-medium">Below decision threshold</span>
           )}
@@ -55,10 +65,15 @@ export interface FraudScoreDistributionProps {
 
 export const FraudScoreDistribution: React.FC<FraudScoreDistributionProps> = ({
   data = [],
-  threshold = 0.72,
+  threshold = 0.028,
 }) => {
   const chartData = data.length > 0 ? data : [{ score: '0.0', count: 0 }];
-  const thresholdLabel = threshold > 0 ? threshold.toFixed(2) : '0.72';
+  const thresholdLabel =
+    threshold > 0
+      ? threshold < 0.1
+        ? threshold.toFixed(3)
+        : threshold.toFixed(2)
+      : '0.028';
   const thresholdBucket = Math.max(0, Math.min(1, Math.round(threshold / 0.05) * 0.05));
   const thresholdBucketLabel =
     thresholdBucket === 0 || thresholdBucket === 1
@@ -99,7 +114,7 @@ export const FraudScoreDistribution: React.FC<FraudScoreDistributionProps> = ({
               ticks={[0, 200, 400, 600, 800, 1000]}
               tickFormatter={(val: number) => val.toLocaleString()}
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<CustomTooltip threshold={threshold} thresholdLabel={thresholdLabel} />} />
             <ReferenceLine
               x={thresholdBucketLabel}
               stroke="#DC2626"

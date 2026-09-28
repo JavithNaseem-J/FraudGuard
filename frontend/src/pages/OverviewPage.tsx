@@ -100,17 +100,6 @@ export const OverviewPage: React.FC = () => {
         </Card>
       )}
 
-      {!error && dashboard.isEmpty && !loading && (
-        <Card className="p-4 border-dashed bg-slate-50/60">
-          <div className="text-sm font-semibold text-slate-main mb-1">
-            No persisted predictions in the current window
-          </div>
-          <p className="text-xs text-slate-secondary">
-            Score a transaction, then Refresh. Clear only resets this view; it
-            never deletes server data.
-          </p>
-        </Card>
-      )}
 
       {dashboard.truncated && (
         <Card className="p-4 border-amber-200 bg-amber-50 text-xs text-amber-800">
@@ -142,7 +131,10 @@ export const OverviewPage: React.FC = () => {
         className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch"
       >
         <div className="lg:col-span-8">
-          <RecentFlaggedTransactions transactions={dashboard.recentFlagged} />
+          <RecentFlaggedTransactions
+            transactions={dashboard.recentFlagged}
+            threshold={dashboard.threshold}
+          />
         </div>
         <div className="lg:col-span-4">
           <SystemStatus

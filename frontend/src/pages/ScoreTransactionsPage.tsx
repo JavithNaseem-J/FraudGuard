@@ -223,7 +223,7 @@ export const ScoreTransactionsPage: React.FC = () => {
         threshold: apiRow.threshold_used,
         // Map "Yes" → "Fraud", "No" → "Legit"
         decision: apiRow.fraud_status === 'Yes' ? 'Fraud' : 'Legit',
-        riskLevel: getRiskLevel(apiRow.fraud_score),
+        riskLevel: getRiskLevel(apiRow.fraud_score, apiRow.threshold_used),
       };
     });
   };

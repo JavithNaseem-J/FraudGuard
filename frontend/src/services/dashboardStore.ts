@@ -67,7 +67,7 @@ export function buildDashboardSnapshot(source: ApiDashboardResponse): DashboardS
       change: '30 days',
       changeDirection: 'up',
       changeSentiment: 'neutral',
-      secondaryText: source.truncated ? 'bounded snapshot' : 'persisted predictions',
+      secondaryText: source.truncated ? 'bounded snapshot' : 'in last 30 days',
       iconName: 'file-text',
     },
     {
@@ -133,7 +133,7 @@ export function buildDashboardSnapshot(source: ApiDashboardResponse): DashboardS
       }).format(new Date(row.created_at)),
       amount: row.amount ?? 0,
       fraudScore: row.score,
-      riskLevel: getRiskLevel(row.score),
+      riskLevel: getRiskLevel(row.score, row.threshold || source.threshold),
       decision: 'Fraud',
     })),
     totalTransactions: source.transaction_count,

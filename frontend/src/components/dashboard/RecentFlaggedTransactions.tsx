@@ -5,11 +5,19 @@ import { decisionBadgeVariant, riskBadgeVariant } from '@/utils/badgeVariants';
 
 export interface RecentFlaggedTransactionsProps {
   transactions?: FlaggedTransaction[];
+  threshold?: number;
 }
 
 export const RecentFlaggedTransactions: React.FC<RecentFlaggedTransactionsProps> = ({
   transactions = [],
+  threshold,
 }) => {
+  const thresholdDisplay =
+    threshold !== undefined && threshold > 0
+      ? threshold < 0.1
+        ? threshold.toFixed(3)
+        : threshold.toFixed(2)
+      : '0.028';
   return (
     <Card className="h-full flex flex-col justify-between" noPadding>
       {/* Header */}
@@ -82,7 +90,7 @@ export const RecentFlaggedTransactions: React.FC<RecentFlaggedTransactionsProps>
 
       {/* Footer info */}
       <div className="px-5 py-2.5 border-t border-slate-border bg-slate-50/40 text-[11px] text-slate-muted flex items-center justify-between">
-        <span>Transactions with score &ge; 0.72 require analyst review</span>
+        <span>Transactions with score &ge; {thresholdDisplay} require analyst review</span>
         <span className="text-slate-secondary font-medium">Real-time Feed</span>
       </div>
     </Card>

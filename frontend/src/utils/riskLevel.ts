@@ -1,29 +1,36 @@
 import { type RiskLevel, type Decision } from '@/types/fraud';
 
-export const DEFAULT_FRAUD_THRESHOLD = 0.72;
+export const DEFAULT_FRAUD_THRESHOLD = 0.028;
 
 /**
  * Determine decision strictly based on the model decision threshold.
  */
-export function getDecision(fraudScore: number, threshold: number = DEFAULT_FRAUD_THRESHOLD): Decision {
+export function getDecision(
+  fraudScore: number,
+  threshold: number = DEFAULT_FRAUD_THRESHOLD
+): Decision {
   return fraudScore >= threshold ? 'Fraud' : 'Legit';
 }
 
 /**
- * Categorize visual risk tier based on fraud score ranges.
- * 0.00–0.29 → Low
- * 0.30–0.59 → Medium
- * 0.60–0.79 → High
- * 0.80–1.00 → Critical
+ * Categorize visual risk tier based on fraud score ranges and model threshold.
+ * Score >= 0.80 or >= 10x threshold → Critical
+ * Score >= 0.40 or >= 4x threshold → High
+ * Score >= threshold → Medium (Flagged)
+ * Score < threshold → Low (Legit)
  */
-export function getRiskLevel(fraudScore: number): RiskLevel {
-  if (fraudScore >= 0.80) {
+export function getRiskLevel(
+  fraudScore: number,
+  threshold: number = DEFAULT_FRAUD_THRESHOLD
+): RiskLevel {
+  const t = threshold > 0 ? threshold : DEFAULT_FRAUD_THRESHOLD;
+  if (fraudScore >= 0.80 || fraudScore >= t * 10) {
     return 'Critical';
   }
-  if (fraudScore >= 0.60) {
+  if (fraudScore >= 0.40 || fraudScore >= t * 4) {
     return 'High';
   }
-  if (fraudScore >= 0.30) {
+  if (fraudScore >= t) {
     return 'Medium';
   }
   return 'Low';

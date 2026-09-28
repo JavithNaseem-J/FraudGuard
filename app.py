@@ -280,6 +280,10 @@ async def service_index():
 async def dashboard(request: Request):
     app_settings = getattr(request.app.state, "settings", settings)
     persistence = request.app.state.persistence
+    model = getattr(request.app.state, "transaction_model", None)
+    active_threshold = model.threshold if model is not None else 0.0
+    active_release_id = getattr(request.app.state, "release_id", None)
+    active_model_version = model.model_version if model is not None else None
     now = datetime.now(UTC)
     window_start = now - timedelta(days=app_settings.dashboard_retention_days)
     fetch_limit = app_settings.dashboard_row_limit + 1
@@ -294,6 +298,9 @@ async def dashboard(request: Request):
         window_start=window_start,
         window_end=now,
         truncated=truncated,
+        active_threshold=active_threshold,
+        active_release_id=active_release_id,
+        active_model_version=active_model_version,
     )
 
 
@@ -304,6 +311,9 @@ def _dashboard_snapshot(
     window_start: datetime,
     window_end: datetime,
     truncated: bool,
+    active_threshold: float = 0.0,
+    active_release_id: str | None = None,
+    active_model_version: str | None = None,
 ) -> dict[str, Any]:
     flagged = [record for record in records if record.get("decision") == "Yes"]
     total = len(records)
@@ -344,13 +354,17 @@ def _dashboard_snapshot(
             "created_at": record.get("created_at"),
             "amount": _finite_number(record.get("transaction_amount")),
             "score": _finite_number(record.get("score")) or 0.0,
-            "threshold": _finite_number(record.get("threshold")) or 0.0,
+            "threshold": _finite_number(record.get("threshold")) or active_threshold,
             "decision": "Yes",
-            "release_id": record.get("release_id") or "unknown",
+            "release_id": record.get("release_id") or active_release_id or "unknown",
         }
         for record in flagged[:5]
     ]
     latest = records[0] if records else {}
+    threshold_val = _finite_number(latest.get("threshold"))
+    if threshold_val is None or threshold_val == 0.0:
+        threshold_val = active_threshold
+
     return {
         "persistence": persistence_mode,
         "window": {
@@ -364,10 +378,10 @@ def _dashboard_snapshot(
         "fraud_rate": round((len(flagged) / total) * 100, 2) if total else 0.0,
         "flagged_amount": round(flagged_amount, 2),
         "average_score": round(score_total / total, 4) if total else 0.0,
-        "threshold": _finite_number(latest.get("threshold")) or 0.0,
+        "threshold": threshold_val,
         "last_updated": latest.get("created_at"),
-        "model_version": latest.get("model_version"),
-        "release_id": latest.get("release_id"),
+        "model_version": latest.get("model_version") or active_model_version,
+        "release_id": latest.get("release_id") or active_release_id,
         "daily_volume": [daily[key] for key in sorted(daily)],
         "score_distribution": distribution,
         "recent_flagged": recent_flagged,
