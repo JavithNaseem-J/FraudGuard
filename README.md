@@ -1,12 +1,13 @@
 # FraudGuard
 
-**Transaction fraud scoring with a chronological holdout, cost-selected decisions, and a browser-to-model demo.**
+**Transaction fraud scoring with a chronological holdout, cost-selected decisions, and a browser-to-model.**
+
+Click Here: [Live](https://fraudguard-gapd.onrender.com)
 
 Python · FastAPI · LightGBM · scikit-learn · React · TypeScript · Supabase · Docker
 
 FraudGuard scores transaction rows for fraud review. Its offline workflow trains from labeled transactions, chooses a model and operating threshold on a later validation period, and reports performance on a still later holdout. A React console accepts CSV or JSON, calls the FastAPI service, and displays predictions and a recent-activity dashboard. This is a bounded demonstration, not an automated payment-blocking system.
 
-**Demo:** [Hosted application](https://fraudguard-gapd.onrender.com) · [Sample transaction CSV](frontend/public/sample_transactions.csv). The hosted URL's current availability and deployed release have not been verified.
 
 ## Evidence
 
