@@ -471,12 +471,8 @@ def test_local_dashboard_counts_predictions_across_batches(tmp_path):
         frame = configure_test_app(tmp_path)
         app.state.persistence = SupabasePersistence(app.state.settings)
         row = frame.iloc[0][FEATURES].to_dict()
-        first_batch = client.post(
-            "/predict/transactions", json={"rows": [row] * 100}
-        )
-        second_batch = client.post(
-            "/predict/transactions", json={"rows": [row] * 10}
-        )
+        first_batch = client.post("/predict/transactions", json={"rows": [row] * 100})
+        second_batch = client.post("/predict/transactions", json={"rows": [row] * 10})
         dashboard = client.get("/dashboard")
 
     assert first_batch.status_code == 200
