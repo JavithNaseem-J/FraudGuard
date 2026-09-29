@@ -460,6 +460,19 @@ def test_dashboard_local_fallback_is_explicit(tmp_path):
     assert response.json()["transaction_count"] == 0
 
 
+def test_dashboard_clear_endpoints(tmp_path):
+    with TestClient(app) as client:
+        configure_test_app(tmp_path)
+        app.state.persistence = SupabasePersistence(app.state.settings)
+        response_delete = client.delete("/dashboard")
+        assert response_delete.status_code == 200
+        assert response_delete.json()["status"] == "ok"
+
+        response_post = client.post("/dashboard/clear")
+        assert response_post.status_code == 200
+        assert response_post.json()["status"] == "ok"
+
+
 def test_chronological_split_is_deterministic_and_keeps_time_groups(tmp_path):
     config = make_transaction_config(tmp_path)
     frame = pd.read_csv(config.train_transaction_path)

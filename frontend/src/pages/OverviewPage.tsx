@@ -8,7 +8,7 @@ import {
   SystemStatus,
   TransactionVolumeChart,
 } from '@/components/dashboard';
-import { getDashboard, getReadyStatus } from '@/services/api';
+import { clearDashboard, getDashboard, getReadyStatus } from '@/services/api';
 import {
   buildDashboardSnapshot,
   emptyDashboardSnapshot,
@@ -23,6 +23,7 @@ export const OverviewPage: React.FC = () => {
   );
   const [readiness, setReadiness] = useState<ApiReadyResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [clearing, setClearing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refreshDashboard = useCallback(async () => {
@@ -47,9 +48,17 @@ export const OverviewPage: React.FC = () => {
     void refreshDashboard();
   }, [refreshDashboard]);
 
-  const clearBrowserView = () => {
-    setDashboard(emptyDashboardSnapshot());
+  const clearBrowserView = async () => {
+    setClearing(true);
     setError(null);
+    try {
+      await clearDashboard();
+      setDashboard(emptyDashboardSnapshot());
+    } catch (requestError) {
+      setError(parseApiError(requestError));
+    } finally {
+      setClearing(false);
+    }
   };
 
   return (
@@ -64,7 +73,7 @@ export const OverviewPage: React.FC = () => {
               variant="secondary"
               size="sm"
               onClick={() => void refreshDashboard()}
-              disabled={loading}
+              disabled={loading || clearing}
               icon={
                 loading ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -79,11 +88,18 @@ export const OverviewPage: React.FC = () => {
               type="button"
               variant="danger"
               size="sm"
+              onClick={() => void clearBrowserView()}
               onDoubleClick={clearBrowserView}
-              disabled={dashboard.isEmpty}
-              title="Double-click to clear only this browser view"
-              aria-label="Clear this browser view. Double-click to confirm."
-              icon={<Trash2 className="w-3.5 h-3.5" />}
+              disabled={loading || clearing || dashboard.isEmpty}
+              title="Clear all predictions from database"
+              aria-label="Clear all predictions from database"
+              icon={
+                clearing ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )
+              }
             >
               Clear
             </Button>

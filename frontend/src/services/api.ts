@@ -69,5 +69,8 @@ export const getReadyStatus = (): Promise<ApiReadyResponse> =>
 export const getDashboard = (): Promise<ApiDashboardResponse> =>
   requestJson('/dashboard', {}, 90_000);
 
+export const clearDashboard = (): Promise<{ status: string; deleted_count: number }> =>
+  requestJson('/dashboard', { method: 'DELETE' });
+
 export const getVersion = (): Promise<ApiVersionResponse> =>
   requestJson('/version');

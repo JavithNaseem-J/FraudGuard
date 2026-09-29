@@ -304,6 +304,24 @@ async def dashboard(request: Request):
     )
 
 
+@app.delete("/dashboard")
+@app.post("/dashboard/clear")
+async def clear_dashboard(request: Request):
+    persistence = request.app.state.persistence
+    deleted_count = persistence.delete_all_predictions()
+    _log_event(
+        "info",
+        "dashboard_cleared",
+        persistence_mode=persistence.mode,
+        deleted_count=deleted_count,
+    )
+    return {
+        "status": "ok",
+        "persistence": persistence.mode,
+        "deleted_count": deleted_count if deleted_count is not None else 0,
+    }
+
+
 def _dashboard_snapshot(
     records: list[dict[str, Any]],
     *,
