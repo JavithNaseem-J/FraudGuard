@@ -13,14 +13,11 @@ import { decisionBadgeVariant, riskBadgeVariant } from '@/utils/badgeVariants';
 
 export interface PredictionResultsTableProps {
   results: PredictionResultRow[];
-  onDownloadCsv: () => void;
 }
 
 const columnHelper = createColumnHelper<PredictionResultRow>();
 
-export const PredictionResultsTable: React.FC<PredictionResultsTableProps> = ({
-  results,
-}) => {
+export const PredictionResultsTable: React.FC<PredictionResultsTableProps> = ({ results }) => {
   const columns = useMemo(
     () => [
       columnHelper.accessor('transactionId', {

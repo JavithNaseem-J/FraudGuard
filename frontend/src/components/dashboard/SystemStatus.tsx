@@ -39,7 +39,8 @@ export const SystemStatus: React.FC<SystemStatusProps> = ({
     {
       name: 'Persistence',
       icon: <Database className="w-3.5 h-3.5 text-slate-400" />,
-      value: readiness?.persistence === 'supabase' ? 'Supabase' : 'Local no-op',
+      value:
+        readiness?.persistence === 'supabase' ? 'Supabase' : 'Local memory',
     },
     {
       name: 'Rate limit',

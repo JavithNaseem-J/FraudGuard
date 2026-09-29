@@ -4,6 +4,7 @@ import json
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import deque
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -33,19 +34,25 @@ class PredictionRecord:
 
 
 class SupabasePersistence:
-    """Server-only access to the sanitized demo persistence schema."""
+    """Persist sanitized demo records in Supabase or bounded local memory."""
 
     def __init__(self, settings: AppSettings):
         self.settings = settings
         self.enabled = settings.supabase_configured
+        self._local_records: deque[PredictionRecord] = deque(
+            maxlen=max(1, settings.dashboard_row_limit + 1)
+        )
 
     @property
     def mode(self) -> str:
-        return "supabase" if self.enabled else "local_noop"
+        return "supabase" if self.enabled else "local_memory"
 
     def persist_predictions(self, records: list[PredictionRecord]) -> int:
-        if not self.enabled or not records:
+        if not records:
             return 0
+        if not self.enabled:
+            self._local_records.extend(records)
+            return len(records)
         result = self._request(
             "prediction_requests", "POST", [asdict(record) for record in records]
         )
@@ -96,7 +103,11 @@ class SupabasePersistence:
         self, *, cutoff: str, limit: int
     ) -> list[dict[str, Any]]:
         if not self.enabled:
-            return []
+            return [
+                asdict(record)
+                for record in reversed(self._local_records)
+                if record.created_at >= cutoff
+            ][:limit]
         selected = (
             "prediction_id,request_id,created_at,transaction_amount,score,threshold,"
             "decision,score_is_calibrated,latency_ms,model_version,release_id"
@@ -115,7 +126,13 @@ class SupabasePersistence:
 
     def delete_predictions_before(self, cutoff: str) -> int | None:
         if not self.enabled:
-            return None
+            retained = [
+                record for record in self._local_records if record.created_at >= cutoff
+            ]
+            deleted = len(self._local_records) - len(retained)
+            self._local_records.clear()
+            self._local_records.extend(retained)
+            return deleted
         result = self._request(
             "prediction_requests",
             "DELETE",
@@ -126,7 +143,9 @@ class SupabasePersistence:
 
     def delete_all_predictions(self) -> int | None:
         if not self.enabled:
-            return None
+            deleted = len(self._local_records)
+            self._local_records.clear()
+            return deleted
         result = self._request(
             "prediction_requests",
             "DELETE",

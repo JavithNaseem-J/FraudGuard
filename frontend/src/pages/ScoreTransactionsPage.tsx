@@ -9,17 +9,16 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { PageHeader, Button, Card } from '@/components/ui';
+import { FileInformation, type FileMetadata } from '@/components/scoring/FileInformation';
+import { FileUpload } from '@/components/scoring/FileUpload';
+import { PasteData } from '@/components/scoring/PasteData';
 import {
-  FileUpload,
-  PasteData,
-  FileInformation,
   SchemaValidation,
-  TransactionPreview,
-  ProcessingSummary,
-  PredictionResultsTable,
-  type FileMetadata,
   type SchemaValidationResult,
-} from '@/components/scoring';
+} from '@/components/scoring/SchemaValidation';
+import { TransactionPreview } from '@/components/scoring/TransactionPreview';
+import { ProcessingSummary } from '@/components/scoring/ProcessingSummary';
+import { PredictionResultsTable } from '@/components/scoring/PredictionResultsTable';
 import { parseTransactionCsv } from '@/constants/transactionSchema';
 import { predictTransactions } from '@/services/api';
 import { parseApiError } from '@/utils/apiError';
@@ -36,7 +35,6 @@ type InputMode = 'upload' | 'paste';
 interface ScoringState {
   summary: ScoringBatchSummary;
   results: PredictionResultRow[];
-  apiResponse: ApiBatchPredictionResponse;
 }
 
 export const ScoreTransactionsPage: React.FC = () => {
@@ -215,7 +213,7 @@ export const ScoreTransactionsPage: React.FC = () => {
       const rawDt = sourceRow['TransactionDT'] ?? sourceRow['timestamp'] ?? '';
 
       return {
-        transactionId: `TX-${String(apiRow.row_index + 1).padStart(6, '0')}`,
+        transactionId: `PRED-${apiRow.prediction_id.slice(0, 8)}`,
         rowIndex: apiRow.row_index,
         transactionDt: rawDt as string | number,
         transactionAmt: +transactionAmt.toFixed(2),
@@ -229,10 +227,7 @@ export const ScoreTransactionsPage: React.FC = () => {
   };
 
   // ── Build summary from real API response ────────────────────────────────────
-  const buildSummary = (
-    apiResp: ApiBatchPredictionResponse,
-    results: PredictionResultRow[]
-  ): ScoringBatchSummary => {
+  const buildSummary = (results: PredictionResultRow[]): ScoringBatchSummary => {
     const fraudCount = results.filter((r) => r.decision === 'Fraud').length;
     const legitCount = results.length - fraudCount;
     const totalScore = results.reduce((sum, r) => sum + r.fraudScore, 0);
@@ -246,9 +241,6 @@ export const ScoreTransactionsPage: React.FC = () => {
         ? +((fraudCount / results.length) * 100).toFixed(1)
         : 0,
       averageFraudScore: +avgScore.toFixed(4),
-      processingDurationSeconds: +(apiResp.latency_ms / 1000).toFixed(3),
-      modelVersion: apiResp.model_version,
-      modelName: apiResp.model_name,
     };
   };
 
@@ -268,8 +260,8 @@ export const ScoreTransactionsPage: React.FC = () => {
     try {
       const apiResp = await predictTransactions(rowsToScore);
       const results = normaliseResults(apiResp, rowsToScore);
-      const summary = buildSummary(apiResp, results);
-      setScoringState({ summary, results, apiResponse: apiResp });
+      const summary = buildSummary(results);
+      setScoringState({ summary, results });
     } catch (err) {
       setScoringError(parseApiError(err));
     } finally {
@@ -288,40 +280,6 @@ export const ScoreTransactionsPage: React.FC = () => {
   };
 
   // ── Download Real Results CSV ───────────────────────────────────────────────
-  const handleDownloadResultsCsv = () => {
-    if (!scoringState || scoringState.results.length === 0) return;
-
-    const headers = [
-      'Transaction ID',
-      'TransactionDT',
-      'TransactionAmt',
-      'Fraud Score',
-      'Threshold',
-      'Decision',
-      'Risk Level',
-    ];
-    const rows = scoringState.results.map((r) => [
-      r.transactionId,
-      r.transactionDt,
-      r.transactionAmt,
-      r.fraudScore,
-      r.threshold,
-      r.decision,
-      r.riskLevel,
-    ]);
-
-    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'fraudguard_prediction_results.csv';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
   // ── Max batch row warning ───────────────────────────────────────────────────
   const exceedsBatchLimit = maxBatchRows !== null && parsedRows.length > maxBatchRows;
 
@@ -490,10 +448,7 @@ export const ScoreTransactionsPage: React.FC = () => {
             threshold={scoringState.results[0]?.threshold}
           />
 
-          <PredictionResultsTable
-            results={scoringState.results}
-            onDownloadCsv={handleDownloadResultsCsv}
-          />
+          <PredictionResultsTable results={scoringState.results} />
         </section>
       )}
     </div>

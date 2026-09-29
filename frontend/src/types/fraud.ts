@@ -34,11 +34,6 @@ export interface ApiReadyResponse {
   };
 }
 
-export interface ApiVersionResponse {
-  commit_sha: string;
-  build_time: string;
-}
-
 export interface ApiPredictionRow {
   prediction_id: string;
   release_id: string;
@@ -67,7 +62,7 @@ export interface ApiBatchPredictionResponse {
 }
 
 export interface ApiDashboardResponse {
-  persistence: 'supabase' | 'local_noop';
+  persistence: 'supabase' | 'local_memory';
   window: { start: string; end: string; retention_days: number };
   truncated: boolean;
   transaction_count: number;
@@ -114,7 +109,4 @@ export interface ScoringBatchSummary {
   predictedFraud: number;
   fraudRate: number;
   averageFraudScore: number;
-  processingDurationSeconds: number;
-  modelVersion: string;
-  modelName: string;
 }

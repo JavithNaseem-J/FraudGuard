@@ -3,11 +3,13 @@ import type {
   ApiDashboardResponse,
   ApiReadyResponse,
   ApiSchemaResponse,
-  ApiVersionResponse,
 } from '@/types/fraud';
 
 const configuredBase = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || '';
-const baseUrl = import.meta.env.DEV ? '/api' : configuredBase;
+const localApi = /^https?:\/\/(?:localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d+)?$/i.test(
+  configuredBase
+);
+const baseUrl = import.meta.env.DEV ? '/api' : localApi ? '' : configuredBase;
 
 export class ApiError extends Error {
   constructor(
@@ -71,6 +73,3 @@ export const getDashboard = (): Promise<ApiDashboardResponse> =>
 
 export const clearDashboard = (): Promise<{ status: string; deleted_count: number }> =>
   requestJson('/dashboard', { method: 'DELETE' });
-
-export const getVersion = (): Promise<ApiVersionResponse> =>
-  requestJson('/version');

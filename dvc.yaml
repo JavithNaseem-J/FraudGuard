@@ -1,13 +1,4 @@
 stages:
-  transaction_contract:
-    cmd: python -m scripts.transaction_data_contract
-    deps:
-      - src/FraudGuard/data/transaction_benchmark.py
-      - scripts/transaction_data_contract.py
-      - data/train_transaction.csv
-    outs:
-      - artifacts/benchmark/transaction_data/contract_report.json
-
   transaction_benchmark:
     cmd: python -m scripts.transaction_benchmark --sample-rows 75000
     deps:

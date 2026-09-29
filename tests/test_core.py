@@ -29,6 +29,7 @@ from FraudGuard.data.transaction_benchmark import (
     COST_SENSITIVITY_RATIOS,
     LIGHTGBM_SEARCH_SPACE,
     TransactionBenchmarkConfig,
+    default_transaction_data_config,
     prepare_transaction_benchmark,
     run_transaction_smoke_benchmark,
     run_transaction_strong_benchmark,
@@ -389,7 +390,11 @@ def test_prediction_guardrails_cover_rate_bytes_and_rows(tmp_path):
 def test_readiness_liveness_and_removed_enterprise_routes(tmp_path):
     with TestClient(app) as client:
         configure_test_app(tmp_path)
-        assert client.get("/live").status_code == 200
+        live = client.get("/live")
+        health = client.get("/health")
+        assert live.status_code == 200
+        assert health.status_code == live.status_code
+        assert health.json() == live.json()
         ready = client.get("/ready")
         assert ready.status_code == 200
         assert ready.json()["release_id"] == "test-release-v1"
@@ -456,8 +461,31 @@ def test_dashboard_local_fallback_is_explicit(tmp_path):
         app.state.persistence = SupabasePersistence(app.state.settings)
         response = client.get("/dashboard")
     assert response.status_code == 200
-    assert response.json()["persistence"] == "local_noop"
+    assert response.json()["persistence"] == "local_memory"
     assert response.json()["transaction_count"] == 0
+
+
+@pytest.mark.integration
+def test_local_dashboard_counts_predictions_across_batches(tmp_path):
+    with TestClient(app) as client:
+        frame = configure_test_app(tmp_path)
+        app.state.persistence = SupabasePersistence(app.state.settings)
+        row = frame.iloc[0][FEATURES].to_dict()
+        first_batch = client.post(
+            "/predict/transactions", json={"rows": [row] * 100}
+        )
+        second_batch = client.post(
+            "/predict/transactions", json={"rows": [row] * 10}
+        )
+        dashboard = client.get("/dashboard")
+
+    assert first_batch.status_code == 200
+    assert first_batch.json()["persisted_count"] == 100
+    assert second_batch.status_code == 200
+    assert second_batch.json()["persisted_count"] == 10
+    assert dashboard.status_code == 200
+    assert dashboard.json()["persistence"] == "local_memory"
+    assert dashboard.json()["transaction_count"] == 110
 
 
 def test_dashboard_clear_endpoints(tmp_path):
@@ -520,6 +548,22 @@ def test_transaction_contract_and_smoke_evaluation_are_temporal(tmp_path):
     assert report["smoke_benchmark"]["metrics_source"] == (
         "untouched chronological test period"
     )
+
+
+def test_explicit_missing_public_test_path_is_not_silently_ignored(tmp_path):
+    config = make_transaction_config(tmp_path)
+    missing_test_path = tmp_path / "missing_public_test.csv"
+    config = default_transaction_data_config(
+        project_root=tmp_path,
+        train_path=config.train_transaction_path,
+        test_path=missing_test_path,
+    )
+
+    contract = validate_transaction_data_contract(config)
+
+    assert config.public_test_transaction_path == missing_test_path
+    assert contract["ready"] is False
+    assert "missing configured public test transaction file" in contract["issues"]
 
 
 def test_release_mode_requires_complete_source_and_public_schema(tmp_path):

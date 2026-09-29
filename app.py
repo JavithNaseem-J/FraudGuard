@@ -40,19 +40,9 @@ class TransactionBatchInput(BaseModel):
     rows: list[dict[str, Any]] = Field(..., min_length=1)
 
 
-def _safe_error_category(error: Exception) -> str:
-    return error.__class__.__name__
-
-
 def _log_event(level: str, event: str, **fields: Any) -> None:
     payload = {"event": event, **fields}
     getattr(logger, level)(json.dumps(payload, sort_keys=True, default=str))
-
-
-def _release_id(app_settings: AppSettings, manifest: Any | None) -> str:
-    if manifest is not None:
-        return str(manifest.release_id)
-    return app_settings.transaction_artifact_release_id or "local"
 
 
 def _build_time() -> str:
@@ -69,7 +59,11 @@ def _build_time() -> str:
 def _load_transaction_model(app: FastAPI) -> None:
     artifact_root, manifest = ensure_transaction_release(app.state.settings)
     model = TransactionPipeline(artifact_root=artifact_root)
-    release_id = _release_id(app.state.settings, manifest)
+    release_id = (
+        str(manifest.release_id)
+        if manifest is not None
+        else app.state.settings.transaction_artifact_release_id or "local"
+    )
     app.state.transaction_model = model
     app.state.release_id = release_id
 
@@ -108,7 +102,7 @@ async def lifespan(app: FastAPI):
     try:
         _load_transaction_model(app)
     except Exception as error:
-        app.state.readiness_error = _safe_error_category(error)
+        app.state.readiness_error = type(error).__name__
         _log_event(
             "error",
             "model_startup_failed",
@@ -186,13 +180,9 @@ def _request_too_large(app_settings: AppSettings) -> JSONResponse:
 
 
 @app.get("/live")
+@app.get("/health")
 async def liveness():
     return {"status": "alive", "service": "FraudGuard API", "env": settings.app_env}
-
-
-@app.get("/health")
-async def health():
-    return await liveness()
 
 
 @app.get("/version")
@@ -540,7 +530,7 @@ async def predict_transaction_batch(request: Request, payload: TransactionBatchI
             "prediction_failed",
             request_id=request_id,
             release_id=release_id,
-            category=_safe_error_category(error),
+            category=type(error).__name__,
         )
         raise HTTPException(status_code=500, detail="Internal server error") from error
 

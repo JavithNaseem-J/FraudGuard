@@ -1,13 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import { Button, Card, PageHeader } from '@/components/ui';
-import {
-  FraudScoreDistribution,
-  MetricsGrid,
-  RecentFlaggedTransactions,
-  SystemStatus,
-  TransactionVolumeChart,
-} from '@/components/dashboard';
+import { FraudScoreDistribution } from '@/components/dashboard/FraudScoreDistribution';
+import { MetricsGrid } from '@/components/dashboard/MetricsGrid';
+import { RecentFlaggedTransactions } from '@/components/dashboard/RecentFlaggedTransactions';
+import { SystemStatus } from '@/components/dashboard/SystemStatus';
+import { TransactionVolumeChart } from '@/components/dashboard/TransactionVolumeChart';
 import { clearDashboard, getDashboard, getReadyStatus } from '@/services/api';
 import {
   buildDashboardSnapshot,

@@ -6,7 +6,7 @@ import shutil
 import tempfile
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -39,16 +39,6 @@ class ArtifactManifest:
     created_at_utc: str
     files: list[ArtifactFile]
     metadata: dict[str, Any]
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "release_id": self.release_id,
-            "artifact_schema_version": self.artifact_schema_version,
-            "model_version": self.model_version,
-            "created_at_utc": self.created_at_utc,
-            "files": [file.__dict__ for file in self.files],
-            "metadata": self.metadata,
-        }
 
 
 def _sha256(path: Path) -> str:
@@ -111,7 +101,7 @@ def build_transaction_release_manifest(
 
 def write_manifest(artifact_root: Path, manifest: ArtifactManifest) -> Path:
     path = artifact_root / MANIFEST_FILENAME
-    path.write_text(json.dumps(manifest.to_dict(), indent=2), encoding="utf-8")
+    path.write_text(json.dumps(asdict(manifest), indent=2), encoding="utf-8")
     return path
 
 
@@ -185,15 +175,6 @@ def _storage_url(settings: AppSettings, release_id: str, file_name: str) -> str:
     )
 
 
-def _storage_headers(
-    settings: AppSettings, *, content_type: str | None = None
-) -> dict[str, str]:
-    headers = supabase_api_headers(settings.supabase_service_role_key)
-    if content_type:
-        headers["Content-Type"] = content_type
-    return headers
-
-
 def publish_transaction_release(
     settings: AppSettings,
     artifact_root: Path,
@@ -216,7 +197,8 @@ def publish_transaction_release(
             data=path.read_bytes(),
             method="POST",
             headers={
-                **_storage_headers(settings, content_type="application/octet-stream"),
+                **supabase_api_headers(settings.supabase_service_role_key),
+                "Content-Type": "application/octet-stream",
                 "x-upsert": "false",
             },
         )
@@ -247,7 +229,7 @@ def download_transaction_release(
         request = urllib.request.Request(
             _storage_url(settings, release_id, name),
             method="GET",
-            headers=_storage_headers(settings),
+            headers=supabase_api_headers(settings.supabase_service_role_key),
         )
         last_error: Exception | None = None
         for _attempt in range(max(settings.artifact_download_retries, 0) + 1):

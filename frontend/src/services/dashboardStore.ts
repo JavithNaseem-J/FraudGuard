@@ -13,14 +13,8 @@ export interface DashboardSnapshot {
   scoreDistribution: ScoreDistributionBucket[];
   recentFlagged: FlaggedTransaction[];
   totalTransactions: number;
-  predictedFraud: number;
-  fraudRate: number;
-  amountFlagged: number;
-  averageFraudScore: number;
   threshold: number;
   lastUpdated: string | null;
-  modelVersion: string | null;
-  releaseId: string | null;
   persistence: string;
   truncated: boolean;
   isEmpty: boolean;
@@ -28,7 +22,7 @@ export interface DashboardSnapshot {
 
 export function emptyDashboardSnapshot(): DashboardSnapshot {
   const empty: ApiDashboardResponse = {
-    persistence: 'local_noop',
+    persistence: 'local_memory',
     window: { start: '', end: '', retention_days: 30 },
     truncated: false,
     transaction_count: 0,
@@ -64,50 +58,30 @@ export function buildDashboardSnapshot(source: ApiDashboardResponse): DashboardS
       id: 'transactions-scored',
       label: 'Transactions Scored',
       value: formatNumber(source.transaction_count),
-      change: '30 days',
-      changeDirection: 'up',
-      changeSentiment: 'neutral',
-      secondaryText: source.truncated ? 'bounded snapshot' : 'in last 30 days',
       iconName: 'file-text',
     },
     {
       id: 'predicted-fraud',
       label: 'Predicted Fraud',
       value: formatNumber(source.flagged_count),
-      change: `${source.fraud_rate.toFixed(2)}%`,
-      changeDirection: source.flagged_count > 0 ? 'up' : 'down',
-      changeSentiment: source.flagged_count > 0 ? 'danger' : 'positive',
-      secondaryText: 'flagged by the model',
       iconName: 'shield-alert',
     },
     {
       id: 'fraud-rate',
       label: 'Flag Rate',
       value: `${source.fraud_rate.toFixed(2)}%`,
-      change: 'Model',
-      changeDirection: 'down',
-      changeSentiment: 'neutral',
-      secondaryText: 'not confirmed fraud',
       iconName: 'bar-chart',
     },
     {
       id: 'amount-flagged',
       label: 'Amount Flagged',
       value: formatCurrency(source.flagged_amount),
-      change: source.flagged_count > 0 ? 'Review' : 'Clear',
-      changeDirection: source.flagged_count > 0 ? 'up' : 'down',
-      changeSentiment: source.flagged_count > 0 ? 'danger' : 'positive',
-      secondaryText: 'transaction amount',
       iconName: 'dollar-sign',
     },
     {
       id: 'avg-fraud-score',
       label: 'Average Fraud Score',
       value: source.average_score.toFixed(4),
-      change: source.threshold > 0 ? `T ${source.threshold.toFixed(3)}` : 'No data',
-      changeDirection: 'down',
-      changeSentiment: 'neutral',
-      secondaryText: 'model score, not probability',
       iconName: 'activity',
     },
   ];
@@ -137,14 +111,8 @@ export function buildDashboardSnapshot(source: ApiDashboardResponse): DashboardS
       decision: 'Fraud',
     })),
     totalTransactions: source.transaction_count,
-    predictedFraud: source.flagged_count,
-    fraudRate: source.fraud_rate,
-    amountFlagged: source.flagged_amount,
-    averageFraudScore: source.average_score,
     threshold: source.threshold,
     lastUpdated: source.last_updated,
-    modelVersion: source.model_version,
-    releaseId: source.release_id,
     persistence: source.persistence,
     truncated: source.truncated,
     isEmpty: source.transaction_count === 0,

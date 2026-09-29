@@ -4,10 +4,6 @@ export interface KpiMetric {
   id: string;
   label: string;
   value: string;
-  change: string;
-  changeDirection: 'up' | 'down';
-  changeSentiment: 'positive' | 'danger' | 'neutral';
-  secondaryText: string;
   iconName: 'file-text' | 'shield-alert' | 'bar-chart' | 'dollar-sign' | 'activity';
 }
 
@@ -29,10 +25,4 @@ export interface FlaggedTransaction {
   fraudScore: number;
   riskLevel: RiskLevel;
   decision: Decision;
-}
-
-export interface ServiceStatusItem {
-  id: 'api' | 'prediction-service' | 'database' | 'redis';
-  name: string;
-  status: 'Operational' | 'Connected' | 'Degraded' | 'Down';
 }

@@ -21,17 +21,13 @@ export interface ParsedTransactionCsv {
   errors: string[];
 }
 
-export function cleanCsvHeader(header: string): string {
-  return header.trim().replace(/^\uFEFF/, '');
-}
-
 export function parseTransactionCsv(rawText: string): ParsedTransactionCsv {
   const results = Papa.parse<Record<string, unknown>>(rawText, {
     delimiter: ',',
     header: true,
     skipEmptyLines: true,
     dynamicTyping: true,
-    transformHeader: cleanCsvHeader,
+    transformHeader: (header) => header.trim().replace(/^\uFEFF/, ''),
   });
 
   return {
@@ -84,10 +80,6 @@ export async function createRandomSampleCsv(
 export async function createRandomSampleJson(
   rowCount = DEFAULT_RANDOM_SAMPLE_ROWS
 ): Promise<string> {
-  const sampleCsv = await loadSampleTransactionCsv();
-  const { header } = getSamplePoolLines(sampleCsv);
-  const csv = [header, ...getRandomRows(sampleCsv, rowCount)].join('\n');
-  const { rows } = parseTransactionCsv(csv);
-
+  const { rows } = parseTransactionCsv(await createRandomSampleCsv(rowCount));
   return JSON.stringify(rows, null, 2);
 }

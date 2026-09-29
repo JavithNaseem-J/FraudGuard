@@ -40,6 +40,7 @@ console.log(`Sample CSV parsed successfully: ${parsed.data.length} rows`);
 
 const apiSource = readFileSync(resolve('src/services/api.ts'), 'utf8');
 const dashboardSource = readFileSync(resolve('src/services/dashboardStore.ts'), 'utf8');
+const scoringPageSource = readFileSync(resolve('src/pages/ScoreTransactionsPage.tsx'), 'utf8');
 const overviewSource = readFileSync(resolve('src/pages/OverviewPage.tsx'), 'utf8');
 const statusSource = readFileSync(
   resolve('src/components/dashboard/SystemStatus.tsx'),
@@ -69,6 +70,13 @@ if (!overviewSource.includes('onDoubleClick={clearBrowserView}')) {
 }
 if (!overviewSource.includes('getDashboard()')) {
   throw new Error('Dashboard Refresh must load the server-backed snapshot');
+}
+if (
+  !scoringPageSource.includes(
+    'transactionId: `PRED-${apiRow.prediction_id.slice(0, 8)}`'
+  ) || !dashboardSource.includes('transactionId: `PRED-${row.prediction_id}`')
+) {
+  throw new Error('Scoring and dashboard rows must use the same prediction ID format');
 }
 if (statusSource.includes('All Systems Operational')) {
   throw new Error('System status must not be hard-coded');

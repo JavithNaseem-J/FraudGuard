@@ -1,6 +1,6 @@
 import React from 'react';
+import { Card } from '@/components/ui';
 import { FileText, ShieldAlert, BarChart3, DollarSign, Activity } from 'lucide-react';
-import { MetricCard } from './MetricCard';
 import type { KpiMetric } from '@/types/dashboard';
 
 export interface MetricsGridProps {
@@ -44,17 +44,24 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({ metrics = [] }) => {
       {metrics.map((metric) => {
         const { icon, bgColor } = getIconProps(metric.iconName);
         return (
-          <MetricCard
+          <Card
             key={metric.id}
-            label={metric.label}
-            value={metric.value}
-            change={metric.change}
-            changeDirection={metric.changeDirection}
-            changeSentiment={metric.changeSentiment}
-            secondaryText={metric.secondaryText}
-            icon={icon}
-            iconBgColor={bgColor}
-          />
+            className="p-4 sm:p-5 flex flex-col justify-between hover:border-slate-300 transition-colors"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <span className="text-xs font-medium text-slate-secondary tracking-normal block leading-tight">
+                  {metric.label}
+                </span>
+                <div className="text-xl sm:text-2xl font-bold text-slate-main tracking-tight pt-0.5">
+                  {metric.value}
+                </div>
+              </div>
+              <div className={`w-9 h-9 rounded-lg border flex items-center justify-center shrink-0 ${bgColor}`}>
+                {icon}
+              </div>
+            </div>
+          </Card>
         );
       })}
     </div>

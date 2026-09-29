@@ -1,25 +1,5 @@
 schema: '2.0'
 stages:
-  transaction_contract:
-    cmd: python -m scripts.transaction_data_contract
-    deps:
-    - path: data/train_transaction.csv
-      hash: md5
-      md5: 58b4038d8715f5e11007b826bef00ce7
-      size: 683351067
-    - path: scripts/transaction_data_contract.py
-      hash: md5
-      md5: 687eaf52040f5d79efe8293b75698244
-      size: 774
-    - path: src/FraudGuard/data/transaction_benchmark.py
-      hash: md5
-      md5: abb7a50d321f13ae228cb4a3439f9784
-      size: 26721
-    outs:
-    - path: artifacts/benchmark/transaction_data/contract_report.json
-      hash: md5
-      md5: 0174a12d86f25b7b92a3c94c8d07dec0
-      size: 280
   transaction_benchmark:
     cmd: python -m scripts.transaction_benchmark --sample-rows 75000
     deps:

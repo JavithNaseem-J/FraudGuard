@@ -1,16 +1,6 @@
-import { type RiskLevel, type Decision } from '@/types/fraud';
+import { type RiskLevel } from '@/types/fraud';
 
-export const DEFAULT_FRAUD_THRESHOLD = 0.028;
-
-/**
- * Determine decision strictly based on the model decision threshold.
- */
-export function getDecision(
-  fraudScore: number,
-  threshold: number = DEFAULT_FRAUD_THRESHOLD
-): Decision {
-  return fraudScore >= threshold ? 'Fraud' : 'Legit';
-}
+const DEFAULT_FRAUD_THRESHOLD = 0.028;
 
 /**
  * Categorize visual risk tier based on fraud score ranges and model threshold.

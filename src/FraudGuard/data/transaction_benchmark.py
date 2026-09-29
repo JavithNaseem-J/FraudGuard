@@ -187,7 +187,9 @@ def default_transaction_data_config(
     public_test = test_path or (root / "data" / "test_transaction.csv")
     return TransactionBenchmarkConfig(
         train_transaction_path=train,
-        public_test_transaction_path=public_test if public_test.exists() else None,
+        public_test_transaction_path=(
+            public_test if test_path is not None or public_test.exists() else None
+        ),
         output_dir=root / "artifacts" / "benchmark" / "transaction_data",
         sample_rows=sample_rows,
         release_mode=release_mode,
@@ -321,13 +323,6 @@ def validate_transaction_data_contract(
     }
 
 
-def load_labeled_transaction_data(config: TransactionBenchmarkConfig) -> pd.DataFrame:
-    return pd.read_csv(
-        config.train_transaction_path,
-        nrows=config.sample_rows,
-    )
-
-
 # Base temporal / amount features derived without any groupby aggregation.
 _BASE_ENGINEERED: tuple[str, ...] = (
     "eng_tx_hour",
@@ -388,7 +383,6 @@ class TransactionFeatureEngineer(BaseEstimator, TransformerMixin):
         self.freq_maps_: dict[str, dict[Any, float]] = {}
         # amt_mean_maps_: column -> {value -> mean TransactionAmt}
         self.amt_mean_maps_: dict[str, dict[Any, float]] = {}
-        self._is_fitted: bool = False
 
     def fit(self, X: Any, y: Any = None) -> TransactionFeatureEngineer:
         if not isinstance(X, pd.DataFrame):
@@ -416,7 +410,6 @@ class TransactionFeatureEngineer(BaseEstimator, TransformerMixin):
             for col in _AMT_RATIO_COLUMNS:
                 self.amt_mean_maps_[col] = {}
 
-        self._is_fitted = True
         return self
 
     def transform(self, X: Any) -> pd.DataFrame:
@@ -574,7 +567,7 @@ def _prepare_transaction_frames(
     if not validation["ready"]:
         raise ValueError(f"Transaction data contract failed: {validation['issues']}")
 
-    source = load_labeled_transaction_data(config)
+    source = pd.read_csv(config.train_transaction_path, nrows=config.sample_rows)
     original_rows = len(source)
     if config.release_mode and original_rows != config.expected_full_source_rows:
         raise ValueError(
@@ -873,9 +866,8 @@ def _feature_audit(
     features: list[str],
     preparation_report: dict[str, Any],
 ) -> dict[str, Any]:
-    selected = features
     identity_features = sorted(
-        feature for feature in selected if _is_identity_feature(feature)
+        feature for feature in features if _is_identity_feature(feature)
     )
     public_compatible = preparation_report["validation"].get(
         "public_test_schema_compatible"
@@ -886,13 +878,13 @@ def _feature_audit(
             "validation": int(len(validation)),
             "test": int(len(test)),
         },
-        "selected_feature_count": len(selected),
+        "selected_feature_count": len(features),
         "numeric_feature_count": len(numeric_features),
         "categorical_feature_count": len(categorical_features),
-        "selected_features": selected,
+        "selected_features": features,
         "excluded_columns": [config.join_key, config.target_column],
         "expected_feature_count": config.expected_feature_count,
-        "schema_feature_count_valid": len(selected) == config.expected_feature_count,
+        "schema_feature_count_valid": len(features) == config.expected_feature_count,
         "identity_features": identity_features,
         "identity_data_used": False,
         "public_test_used_for_metrics": False,
