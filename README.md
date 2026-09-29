@@ -1,237 +1,98 @@
 # FraudGuard
 
-**Chronological transaction fraud scoring with cost-aware thresholding, FastAPI inference, and a React dashboard.**
+**Transaction fraud scoring with a chronological holdout, cost-selected decisions, and a browser-to-model demo.**
 
-🚀 **Live:** [Click Here](https://fraudguard-gapd.onrender.com)
+Python · FastAPI · LightGBM · scikit-learn · React · TypeScript · Supabase · Docker
 
-## Problem
+FraudGuard scores transaction rows for fraud review. Its offline workflow trains from labeled transactions, chooses a model and operating threshold on a later validation period, and reports performance on a still later holdout. A React console accepts CSV or JSON, calls the FastAPI service, and displays predictions and a recent-activity dashboard. This is a bounded demonstration, not an automated payment-blocking system.
 
-Fraud labels are imbalanced, and missing a fraudulent transaction has a different cost from raising a false alert. FraudGuard evaluates transaction scoring on later chronological data and reports cost-weighted results. It is a demonstration project, not an automated payment-blocking system.
+**Demo:** [Hosted application](https://fraudguard-gapd.onrender.com) · [Sample transaction CSV](frontend/public/sample_transactions.csv). The URL is recorded in the prior README; its current availability and deployed release were not checked in this documentation audit.
 
-## Features
+## Saved evaluation result
 
-- Chronological train, validation, and test splits that keep equal transaction-time groups together.
-- Bounded validation-only LightGBM tuning and cost-aware threshold selection.
-- FastAPI scoring for schema-validated transaction rows, with CSV/JSON input in the React interface.
-- Dashboard backed by optional sanitized Supabase prediction records.
-- DVC benchmark stages and immutable model release support.
+The saved full-data report records 590,540 labeled rows split chronologically into 413,378 training, 88,581 validation, and 88,581 holdout rows. The selected LightGBM pipeline (`lgbm-05`) and its 0.02826 threshold were chosen on validation data. The later holdout contained 3,083 fraud labels.
 
-## End-to-End System Architecture
+| Holdout metric | Numeric logistic baseline | Selected LightGBM |
+|---|---:|---:|
+| Average precision | 0.145 | **0.540** |
+| Fraud recall | 0.595 | **0.781** |
+| Mean modeled error cost per row | 0.434 | **0.262** |
+
+Cost assigns 1 unit to a false positive and 20 to a false negative; these are demo assumptions, not measured financial losses. At the selected threshold the holdout has 2,407 true positives, 9,645 false positives, and 676 false negatives. The model score is **not calibrated** as a real-world fraud probability. Figures come from the locally saved `artifacts/benchmark/transaction_data/strong_benchmark_report.json`; generated data and artifacts are ignored by Git, and this audit did not rerun training. See [README_AUDIT.md](README_AUDIT.md) for exact fields and evidence limits.
+
+## Architecture
 
 ```mermaid
-%%{init: {"theme":"base","themeVariables":{"background":"transparent","mainBkg":"transparent","clusterBkg":"transparent","clusterBorder":"#94a3b8","primaryColor":"#1f2937","primaryTextColor":"#ffffff","primaryBorderColor":"#94a3b8","lineColor":"#cbd5e1","textColor":"#ffffff"}}}%%
 flowchart LR
-  subgraph Build[Training and release]
-    D[data/train_transaction.csv] --> DVC[DVC benchmark stages]
-    DVC --> Split[Chronological train / validation / test]
-    Split --> Tune[Bounded LightGBM validation search]
-    Tune --> Train[Freeze model + threshold]
-    Train --> Gates{Final holdout promotion gates}
-    Gates -->|pass| Publish[Release publisher]
-    Publish --> Storage[(Private Supabase Storage)]
-  end
-
-  subgraph Runtime[Single Docker service]
-    User[User browser] --> Web[React + TypeScript UI]
-    Web --> API[FastAPI]
-    API --> Guard[Request size / batch / rate guards]
-    Guard --> Model[Loaded model + feature contract]
-    Model --> Result[Scores and fraud flags]
-    Result --> Web
-    API --> Dash[Dashboard endpoint]
-    Dash --> DB[(Supabase Postgres<br/>sanitized prediction records)]
-    Guard -. distributed limits .-> Redis[(Upstash Redis)]
-  end
-
-  Storage -->|download and verify release| Model
-  CI[GitHub Actions CI] --> Image[Docker image]
-  Image --> Render[Render]
+    Data["Labeled transaction CSV"] --> Split["Contract check and time-group split"]
+    Split --> Fit["Train-fitted baseline and LightGBM pipelines"]
+    Fit --> Select["Validation model and threshold selection"]
+    Select --> Holdout["Later holdout and promotion gates"]
+    Holdout --> Bundle["Model bundle and checksum manifest"]
+    Bundle --> Model["Loaded scoring pipeline"]
+    Browser["React console"] --> API["FastAPI"]
+    API --> Guards["Size, batch and rate guards"]
+    Guards --> Model
+    Model --> API
+    API --> Store["Sanitized prediction store"]
+    Store --> Dashboard["Dashboard snapshot"]
+    Dashboard --> Browser
 ```
 
-## Model Evaluation and Release Sequence
+- `src/FraudGuard/data/transaction_benchmark.py` deduplicates exact rows, keeps equal `TransactionDT` groups together, and uses the labeled file alone for the approximately 70/15/15 split. The public `test_transaction.csv` is unlabeled and used for schema or inference checks, not performance metrics.
+- The LightGBM preprocessing and feature engineering are serialized with the classifier. `TransactionPipeline` requires the release feature list, orders request fields accordingly, and applies the stored threshold to positive-class scores.
+- `app.py` serves the compiled console and API from one process. It loads a configured local bundle or a checksum-validated private Supabase release before reporting `/ready`.
+- Successful scores create sanitized records containing score, threshold, decision, amount, timing, and release metadata. Supabase is optional; without credentials, the dashboard uses bounded process memory. Upstash rate limiting is also optional, with a local per-process fallback.
 
-```mermaid
-%%{init: {"theme":"dark","themeVariables":{"textColor":"#ffffff","primaryTextColor":"#ffffff","actorTextColor":"#ffffff","signalTextColor":"#ffffff","labelTextColor":"#ffffff","loopTextColor":"#ffffff","noteTextColor":"#ffffff"}}}%%
-sequenceDiagram
-  participant Data as Labeled Data
-  participant Bench as Benchmark Pipeline
-  participant Model as LightGBM Model
-  participant Eval as Evaluator
-  participant Gate as Promotion Gate
-  participant Store as Artifact Store
+## Engineering choices
 
-  Data->>Bench: Provide labeled transaction rows
-  Bench->>Bench: Validate, deduplicate, and sort by transaction time
-  Note over Bench: Make chronological 70/15/15 splits and keep equal-time groups together
-  Bench->>Model: Fit bounded candidates on training period
-  Model-->>Bench: Return validation scores
-  Bench->>Eval: Select candidate and threshold on validation period
-  Eval-->>Bench: Freeze the selected pipeline and threshold
-  Bench->>Eval: Score the untouched later holdout once
-  Eval-->>Bench: Return held-out metrics
-  Bench->>Gate: Check quality, baseline, schema, and artifact gates
-  alt All promotion gates pass
-    Gate->>Store: Publish immutable model release
-  else Any promotion gate fails
-    Gate-->>Bench: Block release
-  end
-  Note over Gate,Bench: Current saved benchmark decision: blocked
-```
+**Out-of-time evaluation.** Each time group belongs to one partition, making the holdout a later period. Within the saved run, preprocessing, model, and threshold were fixed before holdout scoring. The report records eight passing release gates, but Git history shows that gate thresholds were relaxed after earlier holdout results. Treat this as a documented development result, not a prospectively locked final test. Publication and deployment are separate actions.
 
-## REST API
+**A threshold tied to an explicit cost policy.** Candidate selection prioritizes the validation recall constraint and modeled error cost. The chosen threshold minimizes validation cost under the 1:20 assumption; the report also records sensitivity at other cost ratios. Ranking quality, decision recall, and modeled cost are reported separately.
 
-| Method | Endpoint | Purpose |
-|---|---|---|
-| `GET` | `/live` | Process liveness. |
-| `GET` | `/health` | Alias for `/live`. |
-| `GET` | `/ready` | Model and dependency readiness; returns `503` if the model is unavailable. |
-| `GET` | `/version` | Build commit and build time. |
-| `GET` | `/schema/transactions` | Active feature names, threshold, and batch limit. |
-| `POST` | `/predict/transactions` | Score a JSON batch of transaction rows. |
-| `GET` | `/dashboard` | Sanitized prediction aggregates and recent flagged records. |
-| `GET` | `/api` | Service index and API links. |
-| `GET` | `/docs` | FastAPI interactive API documentation. |
+**Artifact integrity at startup.** Release manifests list four payload files with sizes and SHA-256 hashes. The publisher uploads the manifest last; the loader checks local or downloaded files before loading the model. `/live` remains available if model loading fails, while `/ready` returns 503.
 
-The UI is also served by the API at `/` and `/score`; `/sample_transactions.csv` serves the demo input file.
+## Run locally
 
-## Tech stack
-
-Python, FastAPI, LightGBM, scikit-learn, pandas, React, TypeScript, Vite, Supabase, Upstash Redis, Docker, Render, and DVC.
-
-## Project structure
-
-```text
-FraudGuard/
-├── app.py                    FastAPI app and frontend serving
-├── src/FraudGuard/
-│   ├── cloud/                 Settings, artifacts, persistence, rate limiting
-│   ├── data/                  Transaction data contract and benchmark
-│   ├── monitoring/            Sanitized prediction monitoring reports
-│   ├── pipeline/              Model artifact validation and inference
-│   └── utils/                 Cost functions and logging
-├── frontend/src/              React pages, components, API client
-├── scripts/                   Benchmark, release, monitoring, and cleanup commands
-├── tests/                     Backend and API tests
-├── supabase/migrations/       Database schema migrations
-├── .github/workflows/         CI and Render deployment workflows
-├── data/                      Local transaction CSVs (git-ignored)
-├── artifacts/                 Generated reports and model artifacts (git-ignored)
-├── Dockerfile                 Combined frontend and API image
-├── dvc.yaml                   Data contract and benchmark stages
-└── render.yaml                Render service configuration
-```
-
-## Key metrics
-
-On the official full-data 590,540-row release benchmark, the LightGBM candidate (`lgbm-05`, threshold `0.0283`) was selected on the chronological validation period and evaluated on the later 88,581-row chronological holdout. The selected candidate beat the logistic baseline on every metric. The decision-relevant results at the 1:20 cost operating point:
-
-| Partition | Rows | Metric | Value |
-|---|---:|---|---:|
-| Validation | 88,581 | Average precision | 0.613 |
-| Validation | 88,581 | Recall | 0.811 |
-| Validation | 88,581 | Cost-weighted average loss | 0.224 |
-| **Holdout** | **88,581** | **Average precision** | **0.540** |
-| **Holdout** | **88,581** | **Recall** | **0.781** |
-| **Holdout** | **88,581** | **Cost-weighted average loss** | **0.262** |
-
-Logistic baseline on holdout (comparison): average cost 0.434 — LightGBM improves by −0.173 (~40% cost reduction).
-
-Holdout confusion matrix (88,581 transactions, 3,083 frauds):
-- True Negatives: 75,853
-- False Positives: 9,645
-- False Negatives: 676
-- True Positives: 2,407
-
-Cost sensitivity on validation period (1:FN weight):
-
-| FN cost weight | Threshold | Recall | FP | FN | Total cost | Avg cost |
-|---:|---:|---:|---:|---:|---:|---:|
-| 10 | 0.061 | 0.700 | 3,528 | 914 | 12,668 | 0.143 |
-| **20** | **0.028** | **0.811** | **8,320** | **575** | **19,820** | **0.224** |
-| 50 | 0.014 | 0.894 | 17,138 | 323 | 33,288 | 0.376 |
-| 100 | 0.007 | 0.949 | 30,604 | 155 | 46,104 | 0.520 |
-
-Metric values are rounded to three decimal places. The release report marks promotion **APPROVED (8/8 gates passed)**:
-- `average_precision`: 0.540 (expected `>= 0.50`)
-- `recall`: 0.781 (expected `>= 0.70`)
-- `average_cost`: 0.262 (expected `<= 0.30`)
-- `logistic_baseline_cost`: 0.262 (expected `<= 0.434 baseline`)
-- `feature_schema`: 392 features, zero identity features
-- `artifact_package`: valid
-- `full_data_mode`: all 590,540 rows processed
-- `final_holdout_isolation`: frozen model and threshold scored holdout once without retuning
-
-Cost uses false-positive cost `1.0` and false-negative cost `20.0`. Active release ID: `tx-20260927-001`.
-
-## Dataset and evaluation contract
-
-| File | Rows | Role |
-|---|---:|---|
-| `data/train_transaction.csv` | 590,540 labeled rows | Chronological model development and final evaluation |
-| `data/test_transaction.csv` | 506,691 unlabeled rows | Schema validation and inference smoke testing only |
-
-The labeled file is deduplicated, ordered by `TransactionDT` and `TransactionID`, and divided near 70/15/15 at `TransactionDT` group boundaries. Training fits preprocessing and models, validation selects the LightGBM configuration and 1:20 cost-weighted threshold, and the final chronological holdout is evaluated once after selection is frozen. The public test file and identity datasets are excluded from fitting, tuning, threshold selection, and metrics.
-
-The release feature contract contains the 392 transaction columns left after excluding `TransactionID` and `isFraud`. A release is blocked if it depends on `id_*`, `DeviceType`, or `DeviceInfo` fields.
-
-## Setup, run, and use
-
-The model artifacts and training data are excluded from Git. Scoring requires a model bundle at the configured artifact path, or a configured remote release. The benchmark requires `data/train_transaction.csv`.
+Use Python 3.11–3.13 and Node 20. The Git checkout does **not** include the model or source data. Supply a locally available, promotion-approved bundle and point `TRANSACTION_ARTIFACT_ROOT` to its directory (containing `model.joblib`, `metadata.json`, `threshold.json`, and `feature_audit.json`). The locally saved approved bundle used in this audit is `artifacts/releases/tx-20260927-001/active`; it is not in a clean clone. Alternatively, configure a private release with `TRANSACTION_ARTIFACT_RELEASE_ID` and server-side Supabase credentials from [.env.example](.env.example).
 
 ```powershell
-git clone https://github.com/JavithNaseem-J/FraudGuard.git
-cd FraudGuard
-python -m venv .venv
-.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-dev.lock
 python -m pip install -e . --no-deps
-Copy-Item .env.example .env
-Set-Location frontend
-npm ci
-npm run build
-Set-Location ..
-# Configure a model bundle or remote release in .env before scoring.
+$env:TRANSACTION_ARTIFACT_ROOT = "artifacts/releases/tx-20260927-001/active"
+npm --prefix frontend ci
+npm --prefix frontend run build
 python app.py
 ```
 
-## Full-data training and release
+Open `http://localhost:8000/` for the console, `/score` to submit rows, `/schema/transactions` for the exact required fields, and `/docs` for API documentation. The default API batch limit is 100 rows. The UI reads the first scoring batch of an uploaded CSV; it does not process an entire large file.
 
-The publishable workflow is intentionally distinct from the bounded developer diagnostic:
+## Reproduce and verify
+
+Place the labeled `train_transaction.csv` and optional unlabeled `test_transaction.csv` under `data/`. The full release workflow needs sufficient memory and more time than the bounded diagnostic. `dvc.yaml` declares the 75,000-row diagnostic; `--release` is the full-data command. Its result goes to `artifacts/benchmark/transaction_data/evaluated-model` and does not automatically replace the serving bundle.
 
 ```powershell
-# Fast local/CI diagnostic. This can never pass the full-data publication gate.
-python -m scripts.transaction_benchmark --sample-rows 75000
-
-# Full release workflow. Requires all 590,540 labeled rows and more memory than
-# a constrained local workstation may provide.
 python -m scripts.transaction_benchmark --release
-
-# After every promotion gate passes, validate 1,000 real unlabeled test rows.
-python -m scripts.validate_transaction_release `
-  --artifact-root artifacts/benchmark/transaction_data/evaluated-model `
-  --public-test data/test_transaction.csv `
-  --rows 1000
-
-# Build and validate the immutable manifest without uploading.
-python -m scripts.publish_model_release `
-  --artifact-root artifacts/benchmark/transaction_data/evaluated-model `
-  --release-id tx-YYYYMMDD-transaction-only-001 `
-  --local-only
+python -m scripts.validate_transaction_release --artifact-root artifacts/benchmark/transaction_data/evaluated-model --public-test data/test_transaction.csv --rows 1000
+python -m pytest -p no:cacheprovider -m "not integration"
+python -m pytest -p no:cacheprovider -m integration
+npm --prefix frontend test
 ```
 
-For Kaggle or Colab, clone the same commit, install `requirements.lock` plus the editable package, attach the two transaction CSV files privately under `data/`, and run the same `--release` command. Do not upload datasets, `.env`, notebook secrets, or generated artifacts to Git. Supply Supabase credentials through the notebook secret store only when publishing an approved release.
+The repository also defines formatting, type, frontend build, container smoke, and exact-commit Render deployment checks in `.github/workflows/`. These commands and checks were inspected for this README; they were not executed in this audit. The current `dvc.lock` does not match the latest benchmark source, so it must be refreshed before treating DVC status as reproducibility evidence.
 
-Remote publication refuses failed promotion metadata and existing release IDs. It uploads the four payload files before `manifest.json`, which acts as the completion marker. Production promotion is a separate configuration change: retain the current release as `ROLLBACK_RELEASE_ID`, set `TRANSACTION_ARTIFACT_RELEASE_ID` to the new immutable release, set the GitHub production-environment variables `EXPECTED_MODEL_RELEASE_ID` and `EXPECTED_MODEL_FEATURE_COUNT=392`, deploy through GitHub Actions, and verify the expected release and transaction-only schema.
+## Limits
 
+- The score is uncalibrated, and the 1:20 cost ratio is an assumed review policy. There are no delayed production labels, customer-specific costs, or measured real-world savings.
+- For unseen `card1` or `addr1` groups, one engineered amount-ratio fallback uses the mean of the current scoring batch. Single-row and multi-row predictions may therefore differ for the same transaction; this needs a fixed training-derived fallback before relying on batch invariance.
+- Scoring is anonymous. The current public dashboard clear endpoints delete all stored predictions, and the UI Clear button can trigger on a single click. Use the hosted dashboard as a shared demo, not an audit record or protected analyst workspace.
+- Supabase writes are best effort; a prediction can succeed with `persisted_count=0`. Local fallback history is lost on restart. Output drift reporting is manual through `scripts/generate_monitoring_report.py`; no continuous monitoring or automatic retraining is implemented.
 
+## Future work for production
 
+1. **Control access and deletion.** Add authentication and scoped authorization. Remove public bulk deletion or restrict it to an owner with server-side confirmation.
+2. **Make scoring consistent.** Replace the batch-dependent fallback with a training-derived value. Calibrate scores if presenting them as probabilities. Evaluate on a fresh later-period holdout with gates fixed in advance and operator-agreed costs.
+3. **Operate with evidence.** Make persistence failures recoverable; schedule retention, service/error monitoring, drift checks, and trustworthy delayed-label evaluation.
+4. **Prove repeatable releases.** Publish shareable metrics and dataset provenance, refresh the DVC lock, and verify the deployed commit, release, schema, and load behavior.
 
-## Future work
-
-- Automated continuous retraining triggers upon detected covariate shift or concept drift.
-- Real-time streaming transaction scoring with sub-10ms target latency via ONNX Runtime.
-- Automated hyperparameter exploration with Optuna during scheduled model refresh windows.
-
-## License
-
-This project is licensed under the [MIT License](LICENSE).
+Licensed under [MIT](LICENSE).
