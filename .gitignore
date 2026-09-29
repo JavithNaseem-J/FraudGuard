@@ -189,12 +189,16 @@ cython_debug/
 
 
 # IDE and local tool state
+.agents/
+.devcontainer/
 .vscode/
 .idea/
 graphify-out/
 openspec/
 
 # Local-only project resources
+README_AUDIT*.md
+readme_audits/
 docs/
 data/
 

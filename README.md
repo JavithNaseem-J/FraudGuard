@@ -6,9 +6,9 @@ Python · FastAPI · LightGBM · scikit-learn · React · TypeScript · Supabase
 
 FraudGuard scores transaction rows for fraud review. Its offline workflow trains from labeled transactions, chooses a model and operating threshold on a later validation period, and reports performance on a still later holdout. A React console accepts CSV or JSON, calls the FastAPI service, and displays predictions and a recent-activity dashboard. This is a bounded demonstration, not an automated payment-blocking system.
 
-**Demo:** [Hosted application](https://fraudguard-gapd.onrender.com) · [Sample transaction CSV](frontend/public/sample_transactions.csv). The URL is recorded in the prior README; its current availability and deployed release were not checked in this documentation audit.
+**Demo:** [Hosted application](https://fraudguard-gapd.onrender.com) · [Sample transaction CSV](frontend/public/sample_transactions.csv). The hosted URL's current availability and deployed release have not been verified.
 
-## Saved evaluation result
+## Evidence
 
 The saved full-data report records 590,540 labeled rows split chronologically into 413,378 training, 88,581 validation, and 88,581 holdout rows. The selected LightGBM pipeline (`lgbm-05`) and its 0.02826 threshold were chosen on validation data. The later holdout contained 3,083 fraud labels.
 
@@ -18,7 +18,7 @@ The saved full-data report records 590,540 labeled rows split chronologically in
 | Fraud recall | 0.595 | **0.781** |
 | Mean modeled error cost per row | 0.434 | **0.262** |
 
-Cost assigns 1 unit to a false positive and 20 to a false negative; these are demo assumptions, not measured financial losses. At the selected threshold the holdout has 2,407 true positives, 9,645 false positives, and 676 false negatives. The model score is **not calibrated** as a real-world fraud probability. Figures come from the locally saved `artifacts/benchmark/transaction_data/strong_benchmark_report.json`; generated data and artifacts are ignored by Git, and this audit did not rerun training. See [README_AUDIT.md](README_AUDIT.md) for exact fields and evidence limits.
+Cost assigns 1 unit to a false positive and 20 to a false negative; these are demo assumptions, not measured financial losses. At the selected threshold the holdout has 2,407 true positives, 9,645 false positives, and 676 false negatives. The model score is **not calibrated** as a real-world fraud probability. Figures come from the locally saved `artifacts/benchmark/transaction_data/strong_benchmark_report.json`; generated data and artifacts are ignored by Git, and this audit did not rerun training.
 
 ## Architecture
 
@@ -44,7 +44,7 @@ flowchart LR
 - `app.py` serves the compiled console and API from one process. It loads a configured local bundle or a checksum-validated private Supabase release before reporting `/ready`.
 - Successful scores create sanitized records containing score, threshold, decision, amount, timing, and release metadata. Supabase is optional; without credentials, the dashboard uses bounded process memory. Upstash rate limiting is also optional, with a local per-process fallback.
 
-## Engineering choices
+### Engineering choices
 
 **Out-of-time evaluation.** Each time group belongs to one partition, making the holdout a later period. Within the saved run, preprocessing, model, and threshold were fixed before holdout scoring. The report records eight passing release gates, but Git history shows that gate thresholds were relaxed after earlier holdout results. Treat this as a documented development result, not a prospectively locked final test. Publication and deployment are separate actions.
 
@@ -54,7 +54,7 @@ flowchart LR
 
 ## Run locally
 
-Use Python 3.11–3.13 and Node 20. The Git checkout does **not** include the model or source data. Supply a locally available, promotion-approved bundle and point `TRANSACTION_ARTIFACT_ROOT` to its directory (containing `model.joblib`, `metadata.json`, `threshold.json`, and `feature_audit.json`). The locally saved approved bundle used in this audit is `artifacts/releases/tx-20260927-001/active`; it is not in a clean clone. Alternatively, configure a private release with `TRANSACTION_ARTIFACT_RELEASE_ID` and server-side Supabase credentials from [.env.example](.env.example).
+Use Python 3.11–3.13 and Node 20. The Git checkout does **not** include the model or source data. Supply a locally available, promotion-approved bundle and point `TRANSACTION_ARTIFACT_ROOT` to its directory (containing `model.joblib`, `metadata.json`, `threshold.json`, and `feature_audit.json`). The locally saved approved bundle is `artifacts/releases/tx-20260927-001/active`; it is not in a clean clone. Alternatively, configure a private release with `TRANSACTION_ARTIFACT_RELEASE_ID` and server-side Supabase credentials from [.env.example](.env.example).
 
 ```powershell
 python -m pip install -r requirements-dev.lock
@@ -67,7 +67,7 @@ python app.py
 
 Open `http://localhost:8000/` for the console, `/score` to submit rows, `/schema/transactions` for the exact required fields, and `/docs` for API documentation. The default API batch limit is 100 rows. The UI reads the first scoring batch of an uploaded CSV; it does not process an entire large file.
 
-## Reproduce and verify
+## Verification
 
 Place the labeled `train_transaction.csv` and optional unlabeled `test_transaction.csv` under `data/`. The full release workflow needs sufficient memory and more time than the bounded diagnostic. `dvc.yaml` declares the 75,000-row diagnostic; `--release` is the full-data command. Its result goes to `artifacts/benchmark/transaction_data/evaluated-model` and does not automatically replace the serving bundle.
 
@@ -88,11 +88,11 @@ The repository also defines formatting, type, frontend build, container smoke, a
 - Scoring is anonymous. The current public dashboard clear endpoints delete all stored predictions, and the UI Clear button can trigger on a single click. Use the hosted dashboard as a shared demo, not an audit record or protected analyst workspace.
 - Supabase writes are best effort; a prediction can succeed with `persisted_count=0`. Local fallback history is lost on restart. Output drift reporting is manual through `scripts/generate_monitoring_report.py`; no continuous monitoring or automatic retraining is implemented.
 
-## Future work for production
+## FutureWork
 
 1. **Control access and deletion.** Add authentication and scoped authorization. Remove public bulk deletion or restrict it to an owner with server-side confirmation.
 2. **Make scoring consistent.** Replace the batch-dependent fallback with a training-derived value. Calibrate scores if presenting them as probabilities. Evaluate on a fresh later-period holdout with gates fixed in advance and operator-agreed costs.
 3. **Operate with evidence.** Make persistence failures recoverable; schedule retention, service/error monitoring, drift checks, and trustworthy delayed-label evaluation.
 4. **Prove repeatable releases.** Publish shareable metrics and dataset provenance, refresh the DVC lock, and verify the deployed commit, release, schema, and load behavior.
 
-Licensed under [MIT](LICENSE).
+Licensed under the [MIT License](LICENSE).
